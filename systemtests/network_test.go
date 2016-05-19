@@ -92,6 +92,7 @@ func (s *systemtestSuite) testNetworkAddDelete(c *C, encap string) {
 		var (
 			netNames   = []string{}
 			containers = map[string][]*container{}
+			ipList     = map[string][]string{}
 		)
 
 		numContainer := s.containers
@@ -120,8 +121,10 @@ func (s *systemtestSuite) testNetworkAddDelete(c *C, encap string) {
 		}
 
 		if s.fwdMode == "routing" && encap == "vlan" {
+			var err error
 			for _, name := range netNames {
-				s.CheckBgpRouteDistribution(c, s.vagrant.GetNode("quagga1"), containers[name])
+				ipList[name], err = s.CheckBgpRouteDistribution(c, s.vagrant.GetNode("quagga1"), containers[name])
+				c.Assert(err, IsNil)
 			}
 		}
 
@@ -162,6 +165,11 @@ func (s *systemtestSuite) testNetworkAddDelete(c *C, encap string) {
 		for range containers {
 			<-endChan
 		}
+		if s.fwdMode == "routing" && encap == "vlan" {
+			for name := range containers {
+				c.Assert(s.CheckBgpRouteWithdraw(c, s.vagrant.GetNode("quagga1"), ipList[name]), IsNil)
+			}
+		}
 
 		for _, netName := range netNames {
 			c.Assert(s.cli.NetworkDelete("default", netName), IsNil)
@@ -192,6 +200,7 @@ func (s *systemtestSuite) testNetworkAddDeleteTenant(c *C, encap string) {
 			netNames    = []string{}
 			containers  = map[string][]*container{}
 			pktTag      = 0
+			ipList      = map[string][]string{}
 		)
 
 		numContainer := s.containers
@@ -233,7 +242,8 @@ func (s *systemtestSuite) testNetworkAddDeleteTenant(c *C, encap string) {
 					mutex.Unlock()
 					endChan <- err
 					if s.fwdMode == "routing" && encap == "vlan" {
-						s.CheckBgpRouteDistribution(c, s.vagrant.GetNode("quagga1"), containers[network])
+						ipList[network], err = s.CheckBgpRouteDistribution(c, s.vagrant.GetNode("quagga1"), containers[network])
+						c.Assert(err, IsNil)
 					}
 					endChan <- s.pingTest(containers[network])
 				}(network, tenant, containers)
@@ -245,6 +255,9 @@ func (s *systemtestSuite) testNetworkAddDeleteTenant(c *C, encap string) {
 
 			for _, network := range networks {
 				c.Assert(s.removeContainers(containers[network]), IsNil)
+				if s.fwdMode == "routing" && encap == "vlan" {
+					c.Assert(s.CheckBgpRouteWithdraw(c, s.vagrant.GetNode("quagga1"), ipList[network]), IsNil)
+				}
 				c.Assert(s.cli.NetworkDelete(tenant, network), IsNil)
 			}
 

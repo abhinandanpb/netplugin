@@ -19,7 +19,7 @@ func (s *systemtestSuite) TestBasicStartRemoveContainerVLAN(c *C) {
 }
 
 func (s *systemtestSuite) testBasicStartRemoveContainer(c *C, encap string) {
-
+	ipList := []string{}
 	if s.fwdMode == "routing" && encap == "vlan" {
 		s.SetupBgp(c, false)
 		s.CheckBgpConnection(c)
@@ -38,11 +38,16 @@ func (s *systemtestSuite) testBasicStartRemoveContainer(c *C, encap string) {
 		c.Assert(err, IsNil)
 
 		if s.fwdMode == "routing" && encap == "vlan" {
-			s.CheckBgpRouteDistribution(c, s.vagrant.GetNode("quagga1"), containers)
+			var err error
+			ipList, err = s.CheckBgpRouteDistribution(c, s.vagrant.GetNode("quagga1"), containers)
+			c.Assert(err, IsNil)
 		}
 
 		c.Assert(s.pingTest(containers), IsNil)
 		c.Assert(s.removeContainers(containers), IsNil)
+		if s.fwdMode == "routing" && encap == "vlan" {
+			c.Assert(s.CheckBgpRouteWithdraw(c, s.vagrant.GetNode("quagga1"), ipList), IsNil)
+		}
 	}
 
 	c.Assert(s.cli.NetworkDelete("default", "private"), IsNil)
@@ -57,6 +62,7 @@ func (s *systemtestSuite) TestBasicStartStopContainerVLAN(c *C) {
 }
 
 func (s *systemtestSuite) testBasicStartStopContainer(c *C, encap string) {
+	ipList := []string{}
 	if s.fwdMode == "routing" && encap == "vlan" {
 		s.SetupBgp(c, false)
 		s.CheckBgpConnection(c)
@@ -73,7 +79,9 @@ func (s *systemtestSuite) testBasicStartStopContainer(c *C, encap string) {
 	containers, err := s.runContainers(s.containers, false, "private", nil)
 	c.Assert(err, IsNil)
 	if s.fwdMode == "routing" && encap == "vlan" {
-		s.CheckBgpRouteDistribution(c, s.vagrant.GetNode("quagga1"), containers)
+		var err error
+		ipList, err = s.CheckBgpRouteDistribution(c, s.vagrant.GetNode("quagga1"), containers)
+		c.Assert(err, IsNil)
 	}
 
 	for i := 0; i < s.iterations; i++ {
@@ -88,6 +96,10 @@ func (s *systemtestSuite) testBasicStartStopContainer(c *C, encap string) {
 			c.Assert(<-errChan, IsNil)
 		}
 
+		if s.fwdMode == "routing" && encap == "vlan" {
+			c.Assert(s.CheckBgpRouteWithdraw(c, s.vagrant.GetNode("quagga1"), ipList), IsNil)
+		}
+
 		for _, cont := range containers {
 			go func(cont *container) { errChan <- cont.start() }(cont)
 		}
@@ -97,12 +109,18 @@ func (s *systemtestSuite) testBasicStartStopContainer(c *C, encap string) {
 		}
 
 		if s.fwdMode == "routing" && encap == "vlan" {
-			s.CheckBgpRouteDistribution(c, s.vagrant.GetNode("quagga1"), containers)
+			var err error
+			ipList, err = s.CheckBgpRouteDistribution(c, s.vagrant.GetNode("quagga1"), containers)
+			c.Assert(err, IsNil)
 		}
 
 	}
 
 	c.Assert(s.removeContainers(containers), IsNil)
+
+	if s.fwdMode == "routing" && encap == "vlan" {
+		c.Assert(s.CheckBgpRouteWithdraw(c, s.vagrant.GetNode("quagga1"), ipList), IsNil)
+	}
 	c.Assert(s.cli.NetworkDelete("default", "private"), IsNil)
 }
 
