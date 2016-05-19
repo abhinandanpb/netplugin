@@ -247,7 +247,7 @@ func processBgpEvent(netPlugin *plugin.NetPlugin, opts cliOpts, hostID string, i
 	var err error
 
 	if opts.hostLabel != hostID {
-		log.Errorf("Ignoring Bgp Event on this host")
+		log.Debugf("Ignoring Bgp Event on this host")
 		return err
 	}
 	netPlugin.Lock()
