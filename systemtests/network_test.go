@@ -59,6 +59,10 @@ func (s *systemtestSuite) testInfraNetworkAddDelete(c *C, encap string) {
 			for nodeNum := 1; nodeNum <= len(s.nodes); nodeNum++ {
 				logrus.Infof("Running ping test for network %q node %d", netNames[networkNum], nodeNum)
 				ipaddr := fmt.Sprintf("10.1.%d.%d", networkNum, nodeNum)
+				if s.fwdMode == "routing" && encap == "vlan" {
+					_, err := s.CheckBgpRouteDistributionIpList(c, s.vagrant.GetNode("quagga1"), []string{ipaddr})
+					c.Assert(err, IsNil)
+				}
 				c.Assert(node1.checkPing(ipaddr), IsNil)
 
 			}

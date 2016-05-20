@@ -982,6 +982,37 @@ func (s *systemtestSuite) CheckBgpRouteDistribution(c *C, node vagrantssh.Testbe
 	return ipList, errors.New("Bgp Route distribution not complete")
 }
 
+func (s *systemtestSuite) CheckBgpRouteDistributionIpList(c *C, node vagrantssh.TestbedNode, ips []string) ([]string, error) {
+	ipList := []string{}
+	nodeCount := 0
+	for i := 0; i < 10; i++ {
+		logrus.Infof("Checking Bgp container route distribution")
+		time.Sleep(2 * time.Second)
+		ipList = nil
+		for _, ip := range ips {
+			nodeCount = 0
+			for _, node := range s.nodes {
+				logrus.Infof("Checking on Node %s", node.Name)
+				out, _ := node.tbnode.RunCommandWithOutput("/opt/gopath/bin/gobgp global rib")
+				fmt.Println(out)
+				if strings.Contains(out, ip) {
+					nodeCount++
+				} else {
+					break
+				}
+			}
+			if nodeCount == len(s.nodes) {
+				ipList = append(ipList, ip)
+			}
+			if len(ipList) == len(ips) {
+				return ipList, nil
+			}
+		}
+		time.Sleep(2 * time.Second)
+	}
+	return ipList, errors.New("Bgp Route distribution not complete")
+}
+
 /*
 func (s *systemtestSuite) CheckBgpRouteDistribution(c *C, node vagrantssh.TestbedNode, containers []*container) ([]string, error) {
 	ipList := []string{}
