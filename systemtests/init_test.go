@@ -180,9 +180,9 @@ func (s *systemtestSuite) TearDownSuite(c *C) {
 	// Print all errors and fatal messages
 	for _, node := range s.nodes {
 		logrus.Infof("Checking for errors on %v", node.Name())
-		out, _ := node.runCommand(`for i in /tmp/_net*; do grep -A 10 -B 10 "error\|fatal" $i; done`)
+		out, _ := node.runCommand("cat /tmp/_net*")
 		if out != "" {
-			logrus.Errorf("Errors in logfiles on %s: \n%s\n==========================\n\n", node.Name(), out)
+			logrus.Errorf("LOGFILE On NODE %s: \n%s\n==========================\n\n", node.Name(), out)
 		}
 	}
 
