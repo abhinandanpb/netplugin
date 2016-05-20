@@ -982,7 +982,7 @@ func (s *systemtestSuite) CheckBgpRouteDistribution(c *C, node vagrantssh.Testbe
 	return ipList, errors.New("Bgp Route distribution not complete")
 }
 
-func (s *systemtestSuite) CheckBgpRouteDistributionIpList(c *C, node vagrantssh.TestbedNode, ips []string) ([]string, error) {
+func (s *systemtestSuite) CheckBgpRouteDistributionIPList(c *C, node vagrantssh.TestbedNode, ips []string) ([]string, error) {
 	ipList := []string{}
 	nodeCount := 0
 	for i := 0; i < 10; i++ {
