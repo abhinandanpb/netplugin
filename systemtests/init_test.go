@@ -167,7 +167,8 @@ func (s *systemtestSuite) TearDownTest(c *C) {
 		c.Check(node.checkForNetpluginErrors(), IsNil)
 		out, _ := node.runCommand("sudo ovs-ofctl -O openflow13 dump-flows contivVlanBridge")
 		logrus.Errorf("THE OVS OUTPUT IS %s %s \n", node.Name(), out)
-		out, _ := node.runCommand("cat /tmp/_net*")
+
+		out, _ = node.runCommand("cat /tmp/_net*")
 		if out != "" {
 			logrus.Errorf("LOGFILE On NODE %s: \n%s\n==========================\n\n", node.Name(), out)
 		}
