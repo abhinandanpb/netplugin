@@ -167,6 +167,10 @@ func (s *systemtestSuite) TearDownTest(c *C) {
 		c.Check(node.checkForNetpluginErrors(), IsNil)
 		out, _ := node.runCommand("sudo ovs-ofctl -O openflow13 dump-flows contivVlanBridge")
 		logrus.Errorf("THE OVS OUTPUT IS %s %s \n", node.Name(), out)
+		out, _ := node.runCommand("cat /tmp/_net*")
+		if out != "" {
+			logrus.Errorf("LOGFILE On NODE %s: \n%s\n==========================\n\n", node.Name(), out)
+		}
 		c.Assert(node.rotateLog("netplugin"), IsNil)
 		c.Assert(node.rotateLog("netmaster"), IsNil)
 	}
@@ -180,9 +184,9 @@ func (s *systemtestSuite) TearDownSuite(c *C) {
 	// Print all errors and fatal messages
 	for _, node := range s.nodes {
 		logrus.Infof("Checking for errors on %v", node.Name())
-		out, _ := node.runCommand("cat /tmp/_net*")
+		out, _ := node.runCommand(`for i in /tmp/_net*; do grep "error\|fatal" $i; done`)
 		if out != "" {
-			logrus.Errorf("LOGFILE On NODE %s: \n%s\n==========================\n\n", node.Name(), out)
+			logrus.Errorf("Errors in logfiles on %s: \n%s\n==========================\n\n", node.Name(), out)
 		}
 	}
 
