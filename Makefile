@@ -109,10 +109,10 @@ system-test:start
 	godep go test -v -timeout 240m ./systemtests -check.v -check.f "00SSH|Basic|Network|Policy|TestTrigger|ACI"
 
 l3-test:
-	CONTIV_L3=2 CONTIV_NODES=3 make stop
+	#CONTIV_L3=2 CONTIV_NODES=3 make stop
 	CONTIV_L3=2 CONTIV_NODES=3 make start
 	CONTIV_L3=2 CONTIV_NODES=3 make ssh-build
-	CONTIV_L3=2 CONTIV_NODES=3 godep go test -v -timeout 240m ./systemtests -check.v
+	CONTIV_L3=2 CONTIV_NODES=3 godep go test -v -timeout 240m ./systemtests -check.v -check.f TestTriggers
 	CONTIV_L3=2 CONTIV_NODES=3 make stop
 
 host-build:
