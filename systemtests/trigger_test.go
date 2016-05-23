@@ -98,7 +98,7 @@ func (s *systemtestSuite) TestTriggerNetpluginDisconnect(c *C) {
 				c.Assert(node.startNetplugin(""), IsNil)
 			}
 			c.Assert(node.runCommandUntilNoError("pgrep netplugin"), IsNil)
-			time.Sleep(20 * time.Second)
+			time.Sleep(30 * time.Second)
 
 			c.Assert(s.pingTest(containers), IsNil)
 		}
