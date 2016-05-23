@@ -172,6 +172,11 @@ func (s *systemtestSuite) TearDownTest(c *C) {
 		if out != "" {
 			logrus.Errorf("LOGFILE On NODE %s: \n%s\n==========================\n\n", node.Name(), out)
 		}
+		out, _ = node.runCommand("cat /tmp/net*")
+		if out != "" {
+			logrus.Errorf("LOGFILE last On NODE %s: \n%s\n==========================\n\n", node.Name(), out)
+		}
+
 		c.Assert(node.rotateLog("netplugin"), IsNil)
 		c.Assert(node.rotateLog("netmaster"), IsNil)
 	}
