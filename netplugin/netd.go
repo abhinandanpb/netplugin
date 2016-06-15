@@ -723,7 +723,10 @@ func handleDockerEvents(event *dockerclient.Event, ec chan error, args ...interf
 		}
 		if event.ID != "" {
 			labelMap := getLabelsFromContainerInspect(&containerInfo)
-
+			if len(labelMap) == 0 {
+				//Ignore container without labels
+				return
+			}
 			containerTenant := getTenantFromContainerInspect(&containerInfo)
 			network, ipAddress := getEpNetworkInfoFromContainerInspect(&containerInfo)
 			container := getContainerFromContainerInspect(&containerInfo)
@@ -741,10 +744,6 @@ func handleDockerEvents(event *dockerclient.Event, ec chan error, args ...interf
 				for k, v := range labelMap {
 					providerUpdReq.Labels[k] = v
 				}
-			}
-			if len(labelMap) == 0 {
-				//Ignore container without labels
-				return
 			}
 			var svcProvResp master.SvcProvUpdateResponse
 

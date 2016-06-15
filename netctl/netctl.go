@@ -782,6 +782,9 @@ func createServiceLB(ctx *cli.Context) {
 	serviceName := ctx.Args()[0]
 	serviceSubnet := ctx.String("network")
 	tenantName := ctx.String("tenant")
+	if len(tenantName) == 0 {
+		tenantName = "default"
+	}
 
 	selectors := ctx.StringSlice("selector")
 	ports := ctx.StringSlice("port")
