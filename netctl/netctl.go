@@ -806,10 +806,12 @@ func deleteServiceLB(ctx *cli.Context) {
 
 	serviceName := ctx.Args()[0]
 	tenantName := ctx.String("tenant")
-
+	if len(tenantName) == 0 {
+		tenantName = "default"
+	}
 	fmt.Printf("Deleting Service  %s,%s", serviceName, tenantName)
 
-	errCheck(ctx, getClient(ctx).ServiceLBDelete(serviceName, tenantName))
+	errCheck(ctx, getClient(ctx).ServiceLBDelete(tenantName, serviceName))
 }
 
 //listServiceLB is a netctl interface routine to delete
