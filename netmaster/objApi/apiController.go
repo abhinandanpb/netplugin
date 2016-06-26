@@ -76,6 +76,7 @@ func NewAPIController(router *mux.Router, storeURL string) *APIController {
 			NetworkInfraType: "default",
 			Vlans:            "1-4094",
 			Vxlans:           "1-10000",
+			FwdMode:          "bridge",
 		})
 		if err != nil {
 			log.Fatalf("Error creating global state. Err: %v", err)
@@ -155,6 +156,7 @@ func (ac *APIController) GlobalCreate(global *contivModel.Global) error {
 		NwInfraType: global.NetworkInfraType,
 		VLANs:       global.Vlans,
 		VXLANs:      global.Vxlans,
+		FwdMode:     global.FwdMode,
 	}
 
 	// Create the object
@@ -182,6 +184,7 @@ func (ac *APIController) GlobalUpdate(global, params *contivModel.Global) error 
 		NwInfraType: params.NetworkInfraType,
 		VLANs:       params.Vlans,
 		VXLANs:      params.Vxlans,
+		FwdMode:     params.FwdMode,
 	}
 
 	// Create the object
@@ -194,6 +197,7 @@ func (ac *APIController) GlobalUpdate(global, params *contivModel.Global) error 
 	global.NetworkInfraType = params.NetworkInfraType
 	global.Vlans = params.Vlans
 	global.Vxlans = params.Vxlans
+	global.FwdMode = params.FwdMode
 
 	return nil
 }

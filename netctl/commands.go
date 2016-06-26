@@ -367,6 +367,11 @@ var Commands = []cli.Command{
 						Usage: "Allowed Vxlan VNID range",
 						Value: "1-10000",
 					},
+					cli.StringFlag{
+						Name:  "fwd-mode, fwd",
+						Usage: "forwarding mode (bridge,routing)",
+						Value: "bridge",
+					},
 				},
 				Action: setGlobal,
 			},

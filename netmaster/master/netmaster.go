@@ -129,6 +129,7 @@ func CreateGlobal(stateDriver core.StateDriver, gc *intent.ConfigGlobal) error {
 	masterGc := &mastercfg.GlobConfig{}
 	masterGc.StateDriver = stateDriver
 	masterGc.NwInfraType = gc.NwInfraType
+	masterGc.FwdMode = gc.FwdMode
 	err = masterGc.Write()
 	if err != nil {
 		return err

@@ -633,12 +633,14 @@ func setGlobal(ctx *cli.Context) {
 	fabMode := ctx.String("fabric-mode")
 	vlans := ctx.String("vlan-range")
 	vxlans := ctx.String("vxlan-range")
+	fwdMode := ctx.String("fwd-mode")
 
 	errCheck(ctx, getClient(ctx).GlobalPost(&contivClient.Global{
 		Name:             "global",
 		NetworkInfraType: fabMode,
 		Vlans:            vlans,
 		Vxlans:           vxlans,
+		FwdMode:          fwdMode,
 	}))
 }
 

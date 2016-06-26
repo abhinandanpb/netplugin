@@ -36,6 +36,7 @@ const (
 type GlobConfig struct {
 	core.CommonState
 	NwInfraType string `json:"nw-infra-type"`
+	FwdMode     string `json:"fwd-mode"`
 }
 
 // Write the state
