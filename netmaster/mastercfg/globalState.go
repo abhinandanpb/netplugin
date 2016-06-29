@@ -61,3 +61,9 @@ func (s *GlobConfig) Clear() error {
 	key := globalConfigPath
 	return s.StateDriver.ClearState(key)
 }
+
+// WatchAll state transitions and send them through the channel.
+func (s *GlobConfig) WatchAll(rsps chan core.WatchState) error {
+	return s.StateDriver.WatchAllState(globalConfigPathPrefix, s, json.Unmarshal,
+		rsps)
+}

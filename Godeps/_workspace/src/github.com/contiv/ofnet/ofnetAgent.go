@@ -113,6 +113,7 @@ const (
  */
 func NewOfnetAgent(bridgeName string, dpName string, localIp net.IP, rpcPort uint16,
 	ovsPort uint16, routerInfo ...string) (*OfnetAgent, error) {
+	log.Infof("Creating new ofnet agenet for %s,%s,%d,%d,%d,%v \n", bridgeName, dpName, localIp, rpcPort, ovsPort, routerInfo)
 	agent := new(OfnetAgent)
 
 	// Init params
@@ -224,6 +225,7 @@ func (self *OfnetAgent) getEndpointByIpVrf(ipAddr net.IP, vrf string) *OfnetEndp
 // Delete cleans up an ofnet agent
 func (self *OfnetAgent) Delete() error {
 	// Disconnect from the switch
+	log.Infof("Received Delete for switch %s", self.ofSwitch.DPID().String)
 	if self.ofSwitch != nil {
 		self.ofSwitch.Disconnect()
 	}
@@ -574,7 +576,7 @@ func (self *OfnetAgent) AddNetwork(vlanId uint16, vni uint32, Gw string, Vrf str
 func (self *OfnetAgent) RemoveNetwork(vlanId uint16, vni uint32, Gw string, Vrf string) error {
 	// Dont handle endpointDB operations during this time
 	self.lockDB()
-	self.unlockDB()
+	defer self.unlockDB()
 
 	vrf := self.vlanVrf[vlanId]
 	gwEpid := self.getEndpointIdByIpVrf(net.ParseIP(Gw), *vrf)
@@ -586,7 +588,7 @@ func (self *OfnetAgent) RemoveNetwork(vlanId uint16, vni uint32, Gw string, Vrf 
 		if (vni != 0) && (endpoint.Vni == vni) {
 			if endpoint.OriginatorIp.String() == self.localIp.String() {
 				log.Fatalf("Vlan %d still has routes. Route: %+v", vlanId, endpoint)
-			} else {
+			} else if endpoint.EndpointType == "internal" {
 				// Network delete arrived before other hosts cleanup endpoint
 				log.Warnf("Vlan %d still has routes, cleaning up. Route: %+v", vlanId, endpoint)
 				// Uninstall the endpoint from datapath

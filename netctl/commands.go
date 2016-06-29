@@ -368,9 +368,8 @@ var Commands = []cli.Command{
 						Value: "1-10000",
 					},
 					cli.StringFlag{
-						Name:  "fwd-mode, fwd",
+						Name:  "fwd-mode, b",
 						Usage: "forwarding mode (bridge,routing)",
-						Value: "bridge",
 					},
 				},
 				Action: setGlobal,

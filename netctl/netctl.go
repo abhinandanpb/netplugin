@@ -634,7 +634,7 @@ func setGlobal(ctx *cli.Context) {
 	vlans := ctx.String("vlan-range")
 	vxlans := ctx.String("vxlan-range")
 	fwdMode := ctx.String("fwd-mode")
-
+	logrus.Infof("THE FORWARDING MDOE IS %s", fwdMode)
 	errCheck(ctx, getClient(ctx).GlobalPost(&contivClient.Global{
 		Name:             "global",
 		NetworkInfraType: fabMode,

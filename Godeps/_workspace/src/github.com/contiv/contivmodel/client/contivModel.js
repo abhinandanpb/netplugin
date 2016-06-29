@@ -187,15 +187,7 @@ var EndpointGroupSummaryView = React.createClass({
 				<ModalTrigger modal={<EndpointGroupModalView endpointGroup={ endpointGroup }/>}>
 					<tr key={ endpointGroup.key } className="info">
 						
-						 
-						<td>{ endpointGroup.extContractsGrps }</td>
-						 
-						<td>{ endpointGroup.groupName }</td>
-						 
-						<td>{ endpointGroup.networkName }</td>
-						 
-						<td>{ endpointGroup.policies }</td>
-						 
+						     
 					</tr>
 				</ModalTrigger>
 			);
@@ -207,11 +199,7 @@ var EndpointGroupSummaryView = React.createClass({
 				<thead>
 					<tr>
 					
-					 
-						<th> External contracts </th>  
-						<th> Group name </th>  
-						<th> Network </th>  
-						<th> Policies </th>  
+					     
 					</tr>
 				</thead>
 				<tbody>
@@ -262,13 +250,7 @@ var ExtContractsGroupSummaryView = React.createClass({
 				<ModalTrigger modal={<ExtContractsGroupModalView extContractsGroup={ extContractsGroup }/>}>
 					<tr key={ extContractsGroup.key } className="info">
 						
-						  
-						<td>{ extContractsGroup.contractsGroupName }</td>
-						 
-						<td>{ extContractsGroup.contractsType }</td>
-						 
-						<td>{ extContractsGroup.tenantName }</td>
-						
+						    
 					</tr>
 				</ModalTrigger>
 			);
@@ -280,10 +262,7 @@ var ExtContractsGroupSummaryView = React.createClass({
 				<thead>
 					<tr>
 					
-					  
-						<th> Contracts group name </th>  
-						<th> Contracts type </th>  
-						<th> Tenant name </th> 
+					    
 					</tr>
 				</thead>
 				<tbody>
@@ -332,11 +311,7 @@ var GlobalSummaryView = React.createClass({
 				<ModalTrigger modal={<GlobalModalView global={ global }/>}>
 					<tr key={ global.key } className="info">
 						
-						 
-						<td>{ global.name }</td>
-						 
-						<td>{ global.networkInfraType }</td>
-						  
+						     
 					</tr>
 				</ModalTrigger>
 			);
@@ -348,9 +323,7 @@ var GlobalSummaryView = React.createClass({
 				<thead>
 					<tr>
 					
-					 
-						<th> name of this block(must be 'global') </th>  
-						<th> Network infrastructure type </th>   
+					     
 					</tr>
 				</thead>
 				<tbody>
@@ -369,6 +342,8 @@ var GlobalModalView = React.createClass({
 	      <Modal {...this.props} bsStyle='primary' bsSize='large' title='Global' animation={false}>
 	        <div className='modal-body' style={ {margin: '5%',} }>
 			
+			
+				<Input type='text' label='Forwarding Mode' ref='fwdMode' defaultValue={obj.fwdMode} placeholder='Forwarding Mode' />
 			
 				<Input type='text' label='name of this block(must be 'global')' ref='name' defaultValue={obj.name} placeholder='name of this block(must be 'global')' />
 			
@@ -399,23 +374,7 @@ var NetworkSummaryView = React.createClass({
 				<ModalTrigger modal={<NetworkModalView network={ network }/>}>
 					<tr key={ network.key } className="info">
 						
-						 
-						<td>{ network.encap }</td>
-						 
-						<td>{ network.gateway }</td>
-						 
-						<td>{ network.ipv6Gateway }</td>
-						 
-						<td>{ network.ipv6Subnet }</td>
-						 
-						<td>{ network.networkName }</td>
-						 
-						<td>{ network.nwType }</td>
-						 
-						<td>{ network.pktTag }</td>
-						 
-						<td>{ network.subnet }</td>
-						 
+						         
 					</tr>
 				</ModalTrigger>
 			);
@@ -427,15 +386,7 @@ var NetworkSummaryView = React.createClass({
 				<thead>
 					<tr>
 					
-					 
-						<th> Encapsulation </th>  
-						<th> Gateway </th>  
-						<th> IPv6Gateway </th>  
-						<th> IPv6Subnet </th>  
-						<th> Network name </th>  
-						<th> Network Type </th>  
-						<th> Vlan/Vxlan Tag </th>  
-						<th> Subnet </th>  
+					         
 					</tr>
 				</thead>
 				<tbody>
@@ -494,11 +445,7 @@ var PolicySummaryView = React.createClass({
 				<ModalTrigger modal={<PolicyModalView policy={ policy }/>}>
 					<tr key={ policy.key } className="info">
 						
-						 
-						<td>{ policy.policyName }</td>
-						 
-						<td>{ policy.tenantName }</td>
-						
+						  
 					</tr>
 				</ModalTrigger>
 			);
@@ -510,9 +457,7 @@ var PolicySummaryView = React.createClass({
 				<thead>
 					<tr>
 					
-					 
-						<th> Policy Name </th>  
-						<th> Tenant Name </th> 
+					  
 					</tr>
 				</thead>
 				<tbody>
@@ -557,35 +502,7 @@ var RuleSummaryView = React.createClass({
 				<ModalTrigger modal={<RuleModalView rule={ rule }/>}>
 					<tr key={ rule.key } className="info">
 						
-						 
-						<td>{ rule.action }</td>
-						 
-						<td>{ rule.direction }</td>
-						 
-						<td>{ rule.fromEndpointGroup }</td>
-						 
-						<td>{ rule.fromIpAddress }</td>
-						 
-						<td>{ rule.fromNetwork }</td>
-						 
-						<td>{ rule.policyName }</td>
-						 
-						<td>{ rule.port }</td>
-						 
-						<td>{ rule.priority }</td>
-						 
-						<td>{ rule.protocol }</td>
-						 
-						<td>{ rule.ruleId }</td>
-						 
-						<td>{ rule.tenantName }</td>
-						 
-						<td>{ rule.toEndpointGroup }</td>
-						 
-						<td>{ rule.toIpAddress }</td>
-						 
-						<td>{ rule.toNetwork }</td>
-						
+						              
 					</tr>
 				</ModalTrigger>
 			);
@@ -597,21 +514,7 @@ var RuleSummaryView = React.createClass({
 				<thead>
 					<tr>
 					
-					 
-						<th> Action </th>  
-						<th> Direction </th>  
-						<th> From Endpoint Group </th>  
-						<th> IP Address </th>  
-						<th> From Network </th>  
-						<th> Policy Name </th>  
-						<th> Port No </th>  
-						<th> Priority </th>  
-						<th> Protocol </th>  
-						<th> Rule Id </th>  
-						<th> Tenant Name </th>  
-						<th> To Endpoint Group </th>  
-						<th> IP Address </th>  
-						<th> To Network </th> 
+					              
 					</tr>
 				</thead>
 				<tbody>

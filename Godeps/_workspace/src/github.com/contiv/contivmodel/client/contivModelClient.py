@@ -244,6 +244,7 @@ class objmodelClient:
 	    postUrl = self.baseUrl + '/api/v1/globals/' + obj.name  + '/'
 
 	    jdata = json.dumps({ 
+			"fwdMode": obj.fwdMode, 
 			"name": obj.name, 
 			"networkInfraType": obj.networkInfraType, 
 			"vlans": obj.vlans, 
@@ -462,6 +463,16 @@ class objmodelClient:
 	    return json.loads(retData)
 
 
+
+	# Inspect serviceLB
+	def createServiceLB(self, obj):
+	    postUrl = self.baseUrl + '/api/v1/inspect/serviceLB/' + obj.tenantName + ":" + obj.serviceName  + '/'
+
+	    retDate = urllib2.urlopen(postUrl)
+	    if retData == "Error":
+	        errorExit("list ServiceLB failed")
+
+	    return json.loads(retData)
 
 
 	# Create tenant

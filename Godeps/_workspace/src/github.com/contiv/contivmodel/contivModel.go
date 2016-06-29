@@ -138,6 +138,7 @@ type Global struct {
 	// every object has a key
 	Key string `json:"key,omitempty"`
 
+	FwdMode          string `json:"fwdMode,omitempty"`          // Forwarding Mode
 	Name             string `json:"name,omitempty"`             // name of this block(must be 'global')
 	NetworkInfraType string `json:"networkInfraType,omitempty"` // Network infrastructure type
 	Vlans            string `json:"vlans,omitempty"`            // Allowed vlan range
@@ -190,12 +191,13 @@ type NetworkLinks struct {
 }
 
 type NetworkOper struct {
-	AllocatedAddressesCount int    `json:"allocatedAddressesCount,omitempty"` // Vlan/Vxlan Tag
-	AllocatedIPAddresses    string `json:"allocatedIPAddresses,omitempty"`    // allocated IP addresses
-	DnsServerIP             string `json:"dnsServerIP,omitempty"`             // dns IP for the network
-	ExternalPktTag          int    `json:"externalPktTag,omitempty"`          // external packet tag
-	NumEndpoints            int    `json:"numEndpoints,omitempty"`            // external packet tag
-	PktTag                  int    `json:"pktTag,omitempty"`                  // internal packet tag
+	AllocatedAddressesCount int            `json:"allocatedAddressesCount,omitempty"` // Vlan/Vxlan Tag
+	AllocatedIPAddresses    string         `json:"allocatedIPAddresses,omitempty"`    // allocated IP addresses
+	DnsServerIP             string         `json:"dnsServerIP,omitempty"`             // dns IP for the network
+	Endpoints               []EndpointOper `json:"endpoints,omitempty"`
+	ExternalPktTag          int            `json:"externalPktTag,omitempty"` // external packet tag
+	NumEndpoints            int            `json:"numEndpoints,omitempty"`   // external packet tag
+	PktTag                  int            `json:"pktTag,omitempty"`         // internal packet tag
 
 }
 
@@ -280,8 +282,17 @@ type ServiceLBLinks struct {
 	Tenant  modeldb.Link `json:"Tenant,omitempty"`
 }
 
+type ServiceLBOper struct {
+	NumProviders int            `json:"numProviders,omitempty"` //  number of provider endpoints for the service
+	Providers    []EndpointOper `json:"providers,omitempty"`
+	ServiceVip   string         `json:"serviceVip,omitempty"` // allocated IP addresses
+
+}
+
 type ServiceLBInspect struct {
 	Config ServiceLB
+
+	Oper ServiceLBOper
 }
 
 type Tenant struct {
@@ -439,6 +450,8 @@ type RuleCallbacks interface {
 }
 
 type ServiceLBCallbacks interface {
+	ServiceLBGetOper(serviceLB *ServiceLBInspect) error
+
 	ServiceLBCreate(serviceLB *ServiceLB) error
 	ServiceLBUpdate(serviceLB, params *ServiceLB) error
 	ServiceLBDelete(serviceLB *ServiceLB) error
@@ -2200,6 +2213,15 @@ func ValidateGlobal(obj *Global) error {
 
 	// Validate each field
 
+	if len(obj.FwdMode) > 64 {
+		return errors.New("fwdMode string too long")
+	}
+
+	fwdModeMatch := regexp.MustCompile("^(bridge|routing)?$")
+	if fwdModeMatch.MatchString(obj.FwdMode) == false {
+		return errors.New("fwdMode string invalid format")
+	}
+
 	if len(obj.Name) > 64 {
 		return errors.New("name string too long")
 	}
@@ -3217,8 +3239,31 @@ func httpInspectServiceLB(w http.ResponseWriter, r *http.Request, vars map[strin
 	}
 	obj.Config = *objConfig
 
+	if err := GetOperServiceLB(&obj); err != nil {
+		log.Errorf("GetServiceLB error for: %+v. Err: %v", obj, err)
+		return nil, err
+	}
+
 	// Return the obj
 	return &obj, nil
+}
+
+// Get a serviceLBOper object
+func GetOperServiceLB(obj *ServiceLBInspect) error {
+	// Check if we handle this object
+	if objCallbackHandler.ServiceLBCb == nil {
+		log.Errorf("No callback registered for serviceLB object")
+		return errors.New("Invalid object type")
+	}
+
+	// Perform callback
+	err := objCallbackHandler.ServiceLBCb.ServiceLBGetOper(obj)
+	if err != nil {
+		log.Errorf("ServiceLBDelete retruned error for: %+v. Err: %v", obj, err)
+		return err
+	}
+
+	return nil
 }
 
 // LIST REST call

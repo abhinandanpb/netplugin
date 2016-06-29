@@ -179,6 +179,19 @@ func (ac *APIController) GlobalUpdate(global, params *contivModel.Global) error 
 		return err
 	}
 
+	//check for change in forwarding mode
+	if global.FwdMode != params.FwdMode {
+		gCfg := &gstate.Cfg{}
+		gCfg.StateDriver = stateDriver
+		numVlans, vlansInUse := gCfg.GetVlansInUse()
+		numVxlans, vxlansInUse := gCfg.GetVxlansInUse()
+		//check if there exists any non default network and tenants
+		if numVlans+numVxlans > 0 {
+			log.Errorf("Unable to update forwarding mode due existing %d vlans and %d vxlans", numVlans, numVxlans)
+			return fmt.Errorf("Please delete %v vlans and %v vxlans before changing forwarding mode", vlansInUse, vxlansInUse)
+		}
+	}
+
 	// Build global config
 	gCfg := intent.ConfigGlobal{
 		NwInfraType: params.NetworkInfraType,
@@ -1273,4 +1286,11 @@ func validatePorts(ports []string) bool {
 		}
 	}
 	return true
+}
+
+//ServiceLBGetOper inspects the oper state of service lb object
+func (ac *APIController) ServiceLBGetOper(serviceLB *contivModel.ServiceLBInspect) error {
+	log.Infof("Received Service load balancer inspect : %+v", serviceLB)
+	return nil
+
 }
