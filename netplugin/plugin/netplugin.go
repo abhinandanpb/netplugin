@@ -190,6 +190,7 @@ func (p *NetPlugin) InspectState() ([]byte, error) {
 //GlobalFwdModeUpdate update the forwarding mode
 func (p *NetPlugin) GlobalFwdModeUpdate(cfg Config) {
 	var err error
+
 	if p.NetworkDriver != nil {
 		p.NetworkDriver.Deinit()
 		p.NetworkDriver = nil

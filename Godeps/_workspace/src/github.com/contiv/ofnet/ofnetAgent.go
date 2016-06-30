@@ -649,7 +649,7 @@ func (self *OfnetAgent) EndpointAdd(epreg *OfnetEndpoint, ret *bool) error {
 
 	// switch connection is not up, return
 	if !self.IsSwitchConnected() {
-		log.Warnf("Received EndpointAdd for {%+v} before switch connection was up", epreg)
+		log.Warnf("Received EndpointAdd for {%+v} before switch connection was up %v", epreg,*self)
 		return nil
 	}
 

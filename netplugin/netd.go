@@ -775,6 +775,24 @@ func processGlobalFwdModeUpdEvent(netPlugin *plugin.NetPlugin, opts cliOpts, fwd
 	}
 
 	netPlugin.GlobalFwdModeUpdate(pluginConfig)
+
+	for _, master := range cluster.MasterDB {
+		netPlugin.AddMaster(core.ServiceInfo{
+			HostAddr: master.HostAddr,
+			Port:     9001, //netmasterRPCPort
+		})
+	}
+
+	serviceList, _ := cluster.ObjdbClient.GetService("netplugin")
+	for _, serviceInfo := range serviceList {
+		if serviceInfo.HostAddr != opts.vtepIP {
+			netPlugin.AddPeerHost(core.ServiceInfo{
+				HostAddr: serviceInfo.HostAddr,
+				Port:     4789, //vxlanUDPPort
+			})
+		}
+	}
+
 }
 
 /*Handles docker events monitored by dockerclient. Currently we only handle
