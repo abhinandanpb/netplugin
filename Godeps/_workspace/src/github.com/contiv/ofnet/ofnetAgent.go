@@ -224,8 +224,10 @@ func (self *OfnetAgent) getEndpointByIpVrf(ipAddr net.IP, vrf string) *OfnetEndp
 
 // Delete cleans up an ofnet agent
 func (self *OfnetAgent) Delete() error {
+	var resp bool
 	// Disconnect from the switch
 	log.Infof("Received Delete for switch %s", self.ofSwitch.DPID().String)
+
 	if self.ofSwitch != nil {
 		self.ofSwitch.Disconnect()
 	}
@@ -238,6 +240,18 @@ func (self *OfnetAgent) Delete() error {
 
 	time.Sleep(100 * time.Millisecond)
 
+	// My info to send to master
+	myInfo := new(OfnetNode)
+	myInfo.HostAddr = self.MyAddr
+	myInfo.HostPort = self.MyPort
+
+	for _, node := range self.masterDb {
+		err := rpcHub.Client(node.HostAddr, node.HostPort).Call("OfnetMaster.UnRegisterNode", &myInfo, &resp)
+		if err != nil {
+			log.Errorf("Failed to register with the master %+v. Err: %v", node, err)
+			return err
+		}
+	}
 	return nil
 }
 
@@ -649,7 +663,7 @@ func (self *OfnetAgent) EndpointAdd(epreg *OfnetEndpoint, ret *bool) error {
 
 	// switch connection is not up, return
 	if !self.IsSwitchConnected() {
-		log.Warnf("Received EndpointAdd for {%+v} before switch connection was up %v", epreg,*self)
+		log.Warnf("Received EndpointAdd for {%+v} before switch connection was up ", epreg)
 		return nil
 	}
 
