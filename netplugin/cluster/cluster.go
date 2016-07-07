@@ -40,10 +40,10 @@ const (
 	vxlanUDPPort     = 4789
 )
 
-// objdb client
+// ObjdbClient client
 var ObjdbClient objdb.API
 
-// Database of MasterDB nodes
+// MasterDB is Database of Master nodes
 var MasterDB = make(map[string]*objdb.ServiceInfo)
 
 func masterKey(srvInfo objdb.ServiceInfo) string {
