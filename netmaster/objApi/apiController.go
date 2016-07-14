@@ -179,6 +179,8 @@ func (ac *APIController) GlobalUpdate(global, params *contivModel.Global) error 
 		return err
 	}
 
+	// Build global config
+	globalCfg := intent.ConfigGlobal{}
 	//check for change in forwarding mode
 	if global.FwdMode != params.FwdMode {
 		gCfg := &gstate.Cfg{}
@@ -190,18 +192,20 @@ func (ac *APIController) GlobalUpdate(global, params *contivModel.Global) error 
 			log.Errorf("Unable to update forwarding mode due existing %d vlans and %d vxlans", numVlans, numVxlans)
 			return fmt.Errorf("Please delete %v vlans and %v vxlans before changing forwarding mode", vlansInUse, vxlansInUse)
 		}
+		globalCfg.FwdMode = params.FwdMode
 	}
-
-	// Build global config
-	gCfg := intent.ConfigGlobal{
-		NwInfraType: params.NetworkInfraType,
-		VLANs:       params.Vlans,
-		VXLANs:      params.Vxlans,
-		FwdMode:     params.FwdMode,
+	if global.Vlans != params.Vlans {
+		globalCfg.VLANs = params.Vlans
+	}
+	if global.Vxlans != params.Vxlans {
+		globalCfg.VXLANs = params.Vxlans
+	}
+	if global.NetworkInfraType != params.NetworkInfraType {
+		globalCfg.NwInfraType = params.NetworkInfraType
 	}
 
 	// Create the object
-	err = master.CreateGlobal(stateDriver, &gCfg)
+	err = master.CreateGlobal(stateDriver, &globalCfg)
 	if err != nil {
 		log.Errorf("Error creating global config {%+v}. Err: %v", global, err)
 		return err

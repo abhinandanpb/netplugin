@@ -634,14 +634,27 @@ func setGlobal(ctx *cli.Context) {
 	vlans := ctx.String("vlan-range")
 	vxlans := ctx.String("vxlan-range")
 	fwdMode := ctx.String("fwd-mode")
-	logrus.Infof("THE FORWARDING MDOE IS %s", fwdMode)
-	errCheck(ctx, getClient(ctx).GlobalPost(&contivClient.Global{
-		Name:             "global",
-		NetworkInfraType: fabMode,
-		Vlans:            vlans,
-		Vxlans:           vxlans,
-		FwdMode:          fwdMode,
-	}))
+
+	global, _ := getClient(ctx).GlobalGet("global")
+
+	logrus.Infof("BEFORE POSTING : %v", global)
+	if fabMode != "" {
+		global.NetworkInfraType = fabMode
+	}
+	if vlans != "" {
+		global.Vlans = vlans
+	}
+
+	if vxlans != "" {
+		global.Vxlans = vxlans
+	}
+	if fwdMode != "" {
+		global.FwdMode = fwdMode
+	}
+
+	logrus.Infof("POSTING: %v", global)
+
+	errCheck(ctx, getClient(ctx).GlobalPost(global))
 }
 
 func dumpJSONList(ctx *cli.Context, list interface{}) {
