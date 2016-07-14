@@ -77,10 +77,10 @@ type SvcProvUpdateRequest struct {
 	IPAddress   string            // provider IP
 	ContainerID string            // container id
 	Labels      map[string]string // lables
-	Tenant      string
-	Network     string
-	Event       string
-	Container   string
+	Tenant      string            // tenant name
+	Network     string            // docker network
+	Event       string            //docker event
+	Container   string            // container endpointID
 }
 
 //SvcProvUpdateResponse is service provider update request from netplugin
@@ -329,7 +329,7 @@ func DeleteEndpointHandler(w http.ResponseWriter, r *http.Request, vars map[stri
 func ServiceProviderUpdateHandler(w http.ResponseWriter, r *http.Request, vars map[string]string) (interface{}, error) {
 
 	var svcProvUpdReq SvcProvUpdateRequest
-
+	var network string
 	// Get object from the request
 	err := json.NewDecoder(r.Body).Decode(&svcProvUpdReq)
 
@@ -352,6 +352,7 @@ func ServiceProviderUpdateHandler(w http.ResponseWriter, r *http.Request, vars m
 
 		epCfg := &mastercfg.CfgEndpointState{}
 		epCfg.StateDriver = stateDriver
+
 		nwID := svcProvUpdReq.Network + "." + svcProvUpdReq.Tenant
 		epCfg.ID = getEpName(nwID, &intent.ConfigEP{Container: svcProvUpdReq.Container})
 
@@ -363,7 +364,7 @@ func ServiceProviderUpdateHandler(w http.ResponseWriter, r *http.Request, vars m
 		provider := &mastercfg.Provider{}
 		provider.IPAddress = svcProvUpdReq.IPAddress
 		provider.Tenant = svcProvUpdReq.Tenant
-		provider.Network = svcProvUpdReq.Network
+		provider.Network = network
 		provider.ContainerID = svcProvUpdReq.ContainerID
 		provider.Labels = make(map[string]string)
 
