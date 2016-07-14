@@ -378,7 +378,7 @@ func (s *systemtestSuite) TestNetworkAddDeleteTenantFwdModeChangeVXLAN(c *C) {
 			c.Assert(s.cli.GlobalPost(&client.Global{FwdMode: "routing",
 				Name:             "global",
 				NetworkInfraType: "default",
-				Vlans:            "1-4094",
+				Vlans:            "1-5094",
 				Vxlans:           "1-10000",
 			}), IsNil)
 			time.Sleep(40 * time.Second)
