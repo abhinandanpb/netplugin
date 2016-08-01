@@ -18,7 +18,7 @@ package ofctrl
 
 import (
 	"errors"
-
+        "sync"
 	"github.com/shaleman/libOpenflow/openflow13"
 
 	log "github.com/Sirupsen/logrus"
@@ -29,6 +29,7 @@ type Table struct {
 	Switch  *OFSwitch
 	TableId uint8
 	flowDb  map[string]*Flow // database of flow entries
+	mutex   sync.Mutex
 }
 
 // Fgraph element type for table
@@ -58,6 +59,8 @@ func (self *Table) NewFlow(match FlowMatch) (*Flow, error) {
 
 	// See if the flow already exists
 	flowKey := flow.flowKey()
+        self.mutex.Lock()
+       defer self.mutex.Unlock()
 	if self.flowDb[flowKey] != nil {
 		log.Errorf("Flow %s already exists", flowKey)
 		return nil, errors.New("Flow already exists")
@@ -74,6 +77,8 @@ func (self *Table) NewFlow(match FlowMatch) (*Flow, error) {
 // Delete a flow from the table
 func (self *Table) DeleteFlow(flowKey string) error {
 	// first empty it and then delete it.
+	self.mutex.Lock()
+        defer self.mutex.Unlock()
 	self.flowDb[flowKey] = nil
 	delete(self.flowDb, flowKey)
 

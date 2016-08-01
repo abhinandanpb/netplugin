@@ -19,15 +19,15 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io/ioutil"
-	"net/http"
-	"strings"
-	"time"
-
 	"github.com/contiv/netplugin/core"
 	"github.com/contiv/netplugin/netplugin/plugin"
 	"github.com/contiv/netplugin/utils/netutils"
 	"github.com/contiv/objdb"
+	"io/ioutil"
+	"net/http"
+	"strings"
+	"sync"
+	"time"
 
 	log "github.com/Sirupsen/logrus"
 )
@@ -45,6 +45,7 @@ var ObjdbClient objdb.API
 
 // MasterDB is Database of Master nodes
 var MasterDB = make(map[string]*objdb.ServiceInfo)
+var masterDBlock sync.Mutex
 
 func masterKey(srvInfo objdb.ServiceInfo) string {
 	return srvInfo.HostAddr + ":" + fmt.Sprintf("%d", srvInfo.Port)
@@ -53,8 +54,9 @@ func masterKey(srvInfo objdb.ServiceInfo) string {
 // Add a master node
 func addMaster(netplugin *plugin.NetPlugin, srvInfo objdb.ServiceInfo) error {
 	// save it in db
+	masterDBlock.Lock()
 	MasterDB[masterKey(srvInfo)] = &srvInfo
-
+	masterDBlock.Unlock()
 	// tell the plugin about the master
 	return netplugin.AddMaster(core.ServiceInfo{
 		HostAddr: srvInfo.HostAddr,
@@ -65,8 +67,9 @@ func addMaster(netplugin *plugin.NetPlugin, srvInfo objdb.ServiceInfo) error {
 // delete master node
 func deleteMaster(netplugin *plugin.NetPlugin, srvInfo objdb.ServiceInfo) error {
 	// delete from the db
+	masterDBlock.Lock()
 	delete(MasterDB, masterKey(srvInfo))
-
+	masterDBlock.Unlock()
 	// tel plugin about it
 	return netplugin.DeleteMaster(core.ServiceInfo{
 		HostAddr: srvInfo.HostAddr,
