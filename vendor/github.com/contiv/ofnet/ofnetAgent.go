@@ -52,32 +52,41 @@ type OfnetAgent struct {
 	dpName      string             // Datapath type
 	datapath    OfnetDatapath      // Configured datapath
 	protopath   OfnetProto         // Configured protopath
-	mutex       sync.Mutex         // Sync mutext when we need to lock
 
-	masterDb map[string]*OfnetNode // list of Masters
+	masterDb      map[string]*OfnetNode // list of Masters
+	masterDbmutex sync.Mutex            // Sync mutext when we need to lock
 
 	// Port and VNI to vlan mapping table
-	portVlanMap map[uint32]*uint16 // Map port number to vlan
-	vniVlanMap  map[uint32]*uint16 // Map VNI to vlan
-	vlanVniMap  map[uint16]*uint32 // Map vlan to VNI
+	portVlanMap      map[uint32]*uint16 // Map port number to vlan
+	portVlanMapMutex sync.RWMutex
+	vniVlanMap       map[uint32]*uint16 // Map VNI to vlan
+	vlanVniMap       map[uint16]*uint32 // Map vlan to VNI
+
+	vlanVnimutex sync.RWMutex // Sync mutext when we need to lock vlanvni and vnivlan maps
 
 	// VTEP database
-	vtepTable map[string]*uint32 // Map vtep IP to OVS port number
+	vtepTable      map[string]*uint32 // Map vtep IP to OVS port number
+	vtepTablemutex sync.RWMutex       // Sync mutext when we need to lock
 
 	// Endpoint database
+	endpointDbMutex sync.RWMutex              // Sync mutext when we need to lock
 	endpointDb      map[string]*OfnetEndpoint // all known endpoints
 	localEndpointDb map[uint32]*OfnetEndpoint // local port to endpoint map
 
 	ovsDriver *ovsdbDriver.OvsDriver
 
 	//Vrf information
-	vrfIdBmp     *bitset.BitSet           //bit map to generate a vrf id
+	vrfIdBmp     *bitset.BitSet //bit map to generate a vrf id
+	vrfMutex     sync.RWMutex
 	vrfNameIdMap map[string]*uint16       // Map vrf name to vrf Id
 	vrfIdNameMap map[uint16]*string       // Map vrf id to vrf Name
 	vrfDb        map[string]*OfnetVrfInfo // Db of all the global vrfs
-	vlanVrf      map[uint16]*string       //vlan to vrf mapping
-	fwdMode      string                   ///forwarding mode routing or bridge
-	GARPStats    map[int]uint32           // per EPG garp stats.
+
+	vlanVrf      map[uint16]*string //vlan to vrf mapping
+	vlanVrfMutex sync.RWMutex
+
+	fwdMode   string         ///forwarding mode routing or bridge
+	GARPStats map[int]uint32 // per EPG garp stats.
 
 }
 
@@ -181,25 +190,29 @@ func NewOfnetAgent(bridgeName string, dpName string, localIp net.IP, rpcPort uin
 	return agent, nil
 }
 
-func (self *OfnetAgent) lockDB() {
-	log.Debugf("Locking endpoint db %s", self.dpName)
-	self.mutex.Lock()
-}
-
-func (self *OfnetAgent) unlockDB() {
-	log.Debugf("Unlocking endpoint db %s", self.dpName)
-	self.mutex.Unlock()
-}
-
 // getEndpointId Get a unique identifier for the endpoint.
 func (self *OfnetAgent) getEndpointId(endpoint EndpointInfo) string {
-	vrf := self.vlanVrf[endpoint.Vlan]
-	return endpoint.IpAddr.String() + ":" + *vrf
+	self.vlanVrfMutex.RLock()
+	defer self.vlanVrfMutex.RUnlock()
+	if vrf, ok := self.vlanVrf[endpoint.Vlan]; ok {
+		return endpoint.IpAddr.String() + ":" + *vrf
+	}
+	return ""
 }
 
 func (self *OfnetAgent) getEndpointIdByIpVlan(ipAddr net.IP, vlan uint16) string {
-	vrf := self.vlanVrf[vlan]
-	return ipAddr.String() + ":" + *vrf
+	self.vlanVrfMutex.RLock()
+	defer self.vlanVrfMutex.RUnlock()
+	if vrf, ok := self.vlanVrf[vlan]; ok {
+		return ipAddr.String() + ":" + *vrf
+	}
+	return ""
+}
+
+func (self *OfnetAgent) getEndpointByID(id string) *OfnetEndpoint {
+	self.endpointDbMutex.RLock()
+	defer self.endpointDbMutex.RUnlock()
+	return self.endpointDb[id]
 }
 
 func (self *OfnetAgent) getEndpointIdByIpVrf(ipAddr net.IP, vrf string) string {
@@ -207,14 +220,22 @@ func (self *OfnetAgent) getEndpointIdByIpVrf(ipAddr net.IP, vrf string) string {
 }
 
 func (self *OfnetAgent) getEndpointByIpVlan(ipAddr net.IP, vlan uint16) *OfnetEndpoint {
-	vrf := self.vlanVrf[vlan]
-	if self.endpointDb != nil && vrf != nil {
-		return self.endpointDb[ipAddr.String()+":"+*vrf]
+	self.vlanVrfMutex.RLock()
+	defer self.vlanVrfMutex.RUnlock()
+
+	if vrf, ok := self.vlanVrf[vlan]; ok {
+		self.endpointDbMutex.RLock()
+		defer self.endpointDbMutex.RLock()
+		if self.endpointDb != nil {
+			return self.endpointDb[ipAddr.String()+":"+*vrf]
+		}
 	}
 	return nil
 }
 
 func (self *OfnetAgent) getEndpointByIpVrf(ipAddr net.IP, vrf string) *OfnetEndpoint {
+	self.endpointDbMutex.RLock()
+	defer self.endpointDbMutex.RLock()
 	if self.endpointDb != nil && vrf != "" {
 		return self.endpointDb[ipAddr.String()+":"+vrf]
 	}
@@ -223,6 +244,8 @@ func (self *OfnetAgent) getEndpointByIpVrf(ipAddr net.IP, vrf string) *OfnetEndp
 
 // GetLocalEndpoint finds the endpoint based on the port number
 func (self *OfnetAgent) getLocalEndpoint(portNo uint32) *OfnetEndpoint {
+	self.endpointDbMutex.RLock()
+	defer self.endpointDbMutex.RLock()
 	ep, found := self.localEndpointDb[portNo]
 	if found {
 		return ep
@@ -253,7 +276,7 @@ func (self *OfnetAgent) Delete() error {
 	myInfo := new(OfnetNode)
 	myInfo.HostAddr = self.MyAddr
 	myInfo.HostPort = self.MyPort
-
+	self.masterDbmutex.Lock()
 	for _, node := range self.masterDb {
 		err := rpcHub.Client(node.HostAddr, node.HostPort).Call("OfnetMaster.UnRegisterNode", &myInfo, &resp)
 		if err != nil {
@@ -261,6 +284,7 @@ func (self *OfnetAgent) Delete() error {
 			return err
 		}
 	}
+	self.masterDbmutex.Unlock()
 	return nil
 }
 
@@ -333,9 +357,9 @@ func (self *OfnetAgent) AddMaster(masterInfo *OfnetNode, ret *bool) error {
 	masterKey := fmt.Sprintf("%s:%d", masterInfo.HostAddr, masterInfo.HostPort)
 
 	// Save it in DB
-	self.lockDB()
+	self.masterDbmutex.Lock()
 	self.masterDb[masterKey] = master
-	self.unlockDB()
+	self.masterDbmutex.Unlock()
 
 	// My info to send to master
 	myInfo := new(OfnetNode)
@@ -356,6 +380,8 @@ func (self *OfnetAgent) AddMaster(masterInfo *OfnetNode, ret *bool) error {
 	}
 
 	// Send all local endpoints to new master.
+	self.endpointDbMutex.RLock()
+	defer self.endpointDbMutex.RUnlock()
 	for _, endpoint := range self.localEndpointDb {
 		if endpoint.OriginatorIp.String() == self.localIp.String() {
 			var resp bool
@@ -382,9 +408,9 @@ func (self *OfnetAgent) RemoveMaster(masterInfo *OfnetNode) error {
 	masterKey := fmt.Sprintf("%s:%d", masterInfo.HostAddr, masterInfo.HostPort)
 
 	// Remove it from DB
-	self.lockDB()
+	self.masterDbmutex.Lock()
 	delete(self.masterDb, masterKey)
-	self.unlockDB()
+	self.masterDbmutex.Unlock()
 
 	return nil
 }
@@ -399,12 +425,14 @@ func (self *OfnetAgent) InjectGARPs(epgID int, resp *bool) error {
 // This takes ofp port number, mac address, vlan , VrfId and IP address of the port.
 func (self *OfnetAgent) AddLocalEndpoint(endpoint EndpointInfo) error {
 	// Add port vlan mapping
-	self.lockDB()
+	self.portVlanMapMutex.Lock()
 	self.portVlanMap[endpoint.PortNo] = &endpoint.Vlan
-	self.unlockDB()
+	self.portVlanMapMutex.Unlock()
 
 	// Map Vlan to VNI
+	self.vlanVnimutex.RLock()
 	vni := self.vlanVniMap[endpoint.Vlan]
+	self.vlanVnimutex.RUnlock()
 	if vni == nil {
 		log.Errorf("VNI for vlan %d is not known", endpoint.Vlan)
 		return errors.New("Unknown Vlan")
@@ -413,16 +441,22 @@ func (self *OfnetAgent) AddLocalEndpoint(endpoint EndpointInfo) error {
 	epId := self.getEndpointIdByIpVlan(endpoint.IpAddr, endpoint.Vlan)
 
 	// ignore duplicate adds
+	self.endpointDbMutex.RLock()
 	if (self.localEndpointDb[endpoint.PortNo] != nil) &&
 		(self.localEndpointDb[endpoint.PortNo].EndpointID == epId) {
+		self.endpointDbMutex.RUnlock()
 		return nil
 	}
-
+	self.endpointDbMutex.RUnlock()
+	self.vlanVrfMutex.RLock()
 	vrf := self.vlanVrf[endpoint.Vlan]
+	self.vlanVrfMutex.RUnlock()
+
 	if vrf == nil {
 		log.Errorf("Invalid vlan to vrf mapping for %v", endpoint.Vlan)
 		return errors.New("Invalid vlan to vrf mapping")
 	}
+
 	var v6mask net.IP
 	if endpoint.Ipv6Addr != nil {
 		v6mask = net.ParseIP("ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff")
@@ -455,12 +489,13 @@ func (self *OfnetAgent) AddLocalEndpoint(endpoint EndpointInfo) error {
 	}
 
 	// Add the endpoint to local routing table
-	self.lockDB()
+	self.endpointDbMutex.Lock()
 	self.endpointDb[epId] = epreg
 	self.localEndpointDb[endpoint.PortNo] = epreg
-	self.unlockDB()
+	self.endpointDbMutex.Unlock()
 
 	// Send the endpoint to all known masters
+	self.masterDbmutex.Lock()
 	for _, master := range self.masterDb {
 		var resp bool
 
@@ -473,6 +508,7 @@ func (self *OfnetAgent) AddLocalEndpoint(endpoint EndpointInfo) error {
 			// Continue sending the message to other masters.
 		}
 	}
+	self.masterDbmutex.Unlock()
 
 	return nil
 }
@@ -480,11 +516,13 @@ func (self *OfnetAgent) AddLocalEndpoint(endpoint EndpointInfo) error {
 // Remove local endpoint
 func (self *OfnetAgent) RemoveLocalEndpoint(portNo uint32) error {
 	// find the local copy
+	self.endpointDbMutex.RLock()
 	epreg := self.localEndpointDb[portNo]
 	if epreg == nil {
 		log.Errorf("Endpoint not found for port %d", portNo)
 		return errors.New("Endpoint not found")
 	}
+	self.endpointDbMutex.RUnlock()
 
 	// Call the datapath
 	err := self.datapath.RemoveLocalEndpoint(*epreg)
@@ -493,13 +531,16 @@ func (self *OfnetAgent) RemoveLocalEndpoint(portNo uint32) error {
 	}
 
 	// delete the endpoint from local endpoint table
-	self.lockDB()
+	self.endpointDbMutex.Lock()
 	delete(self.endpointDb, epreg.EndpointID)
 	delete(self.localEndpointDb, portNo)
+	self.endpointDbMutex.Unlock()
+	self.portVlanMapMutex.Lock()
 	delete(self.portVlanMap, portNo)
-	self.unlockDB()
+	self.portVlanMapMutex.Unlock()
 
 	// Send the DELETE to all known masters
+	self.masterDbmutex.Lock()
 	for _, master := range self.masterDb {
 		var resp bool
 
@@ -512,6 +553,7 @@ func (self *OfnetAgent) RemoveLocalEndpoint(portNo uint32) error {
 			log.Errorf("Failed to DELETE endpoint %+v on master %+v. Err: %v", epreg, master, err)
 		}
 	}
+	self.masterDbmutex.Unlock()
 
 	return nil
 }
@@ -520,6 +562,9 @@ func (self *OfnetAgent) RemoveLocalEndpoint(portNo uint32) error {
 // to ofp port number.
 func (self *OfnetAgent) AddVtepPort(portNo uint32, remoteIp net.IP) error {
 	// Ignore duplicate Add vtep messages
+	self.vtepTablemutex.Lock()
+	defer self.vtepTablemutex.Unlock()
+
 	oldPort, ok := self.vtepTable[remoteIp.String()]
 	if ok && *oldPort == portNo {
 		return nil
@@ -528,8 +573,6 @@ func (self *OfnetAgent) AddVtepPort(portNo uint32, remoteIp net.IP) error {
 	log.Infof("Adding VTEP port(%d), Remote IP: %v", portNo, remoteIp)
 
 	// Dont handle endpointDB operations during this time
-	self.lockDB()
-	defer self.unlockDB()
 
 	// Store the vtep IP to port number mapping
 	self.vtepTable[remoteIp.String()] = &portNo
@@ -541,21 +584,27 @@ func (self *OfnetAgent) AddVtepPort(portNo uint32, remoteIp net.IP) error {
 // Remove a VTEP port
 func (self *OfnetAgent) RemoveVtepPort(portNo uint32, remoteIp net.IP) error {
 	// Clear the vtep IP to port number mapping
+	self.vtepTablemutex.Lock()
 	delete(self.vtepTable, remoteIp.String())
+	self.vtepTablemutex.Unlock()
 
+	self.endpointDbMutex.Lock()
 	// walk all the endpoints and uninstall the ones pointing at remote host
 	for _, endpoint := range self.endpointDb {
 		// Find all the routes pointing at the remote VTEP
-		if endpoint.OriginatorIp.String() == remoteIp.String() {
-			var resp bool
+		if endpoint.OriginatorIp.String() == remoteIp.String() &&
+			self.endpointDb[endpoint.EndpointID] != nil {
 			// Uninstall the route from HW
-			err := self.EndpointDel(endpoint, &resp)
+			err := self.datapath.RemoveEndpoint(endpoint)
 			if err != nil {
 				log.Errorf("Error uninstalling endpoint %+v. Err: %v", endpoint, err)
+			} else {
+				// Remove it from endpoint table
+				delete(self.endpointDb, endpoint.EndpointID)
 			}
 		}
 	}
-
+	self.endpointDbMutex.Unlock()
 	// Call the datapath
 	return self.datapath.RemoveVtepPort(portNo, remoteIp)
 }
@@ -565,25 +614,28 @@ func (self *OfnetAgent) RemoveVtepPort(portNo uint32, remoteIp net.IP) error {
 func (self *OfnetAgent) AddNetwork(vlanId uint16, vni uint32, Gw string, Vrf string) error {
 
 	// if nothing changed, ignore the message
+	self.vlanVnimutex.Lock()
 	oldVni, ok := self.vlanVniMap[vlanId]
 	if ok && *oldVni == vni {
+		self.vlanVnimutex.Unlock()
 		return nil
 	}
 	log.Infof("ofnet Adding Vlan %d. Vni %d", vlanId, vni)
 
 	// store it in DB
-	self.lockDB()
 	self.vlanVniMap[vlanId] = &vni
 	self.vniVlanMap[vni] = &vlanId
-	self.unlockDB()
-
+	self.vlanVnimutex.Unlock()
 	// Call the datapath
 	err := self.datapath.AddVlan(vlanId, vni, Vrf)
 	if err != nil {
 		return err
 	}
 
+	self.vlanVrfMutex.RLock()
 	vrf := self.vlanVrf[vlanId]
+	self.vlanVrfMutex.RUnlock()
+
 	gwEpid := self.getEndpointIdByIpVrf(net.ParseIP(Gw), *vrf)
 
 	if Gw != "" && self.fwdMode == "routing" {
@@ -599,7 +651,9 @@ func (self *OfnetAgent) AddNetwork(vlanId uint16, vni uint32, Gw string, Vrf str
 			PortNo:       0,
 			Timestamp:    time.Now(),
 		}
+		self.endpointDbMutex.Lock()
 		self.endpointDb[gwEpid] = epreg
+		self.endpointDbMutex.Unlock()
 	}
 
 	return nil
@@ -608,12 +662,9 @@ func (self *OfnetAgent) AddNetwork(vlanId uint16, vni uint32, Gw string, Vrf str
 // Remove a vlan from datapath
 func (self *OfnetAgent) RemoveNetwork(vlanId uint16, vni uint32, Gw string, Vrf string) error {
 	// Dont handle endpointDB operations during this time
-	self.lockDB()
-	defer self.unlockDB()
+	gwEpid := self.getEndpointIdByIpVlan(net.ParseIP(Gw), vlanId)
 
-	vrf := self.vlanVrf[vlanId]
-	gwEpid := self.getEndpointIdByIpVrf(net.ParseIP(Gw), *vrf)
-
+	self.endpointDbMutex.Lock()
 	delete(self.endpointDb, gwEpid)
 
 	// make sure there are no endpoints still installed in this vlan
@@ -635,11 +686,12 @@ func (self *OfnetAgent) RemoveNetwork(vlanId uint16, vni uint32, Gw string, Vrf 
 			}
 		}
 	}
-
+	self.endpointDbMutex.Unlock()
 	// Clear the database
+	self.vlanVnimutex.Unlock()
 	delete(self.vlanVniMap, vlanId)
 	delete(self.vniVlanMap, vni)
-
+	self.vlanVnimutex.Unlock()
 	// Call the datapath
 	return self.datapath.RemoveVlan(vlanId, vni, Vrf)
 }
@@ -687,11 +739,11 @@ func (self *OfnetAgent) EndpointAdd(epreg *OfnetEndpoint, ret *bool) error {
 	}
 
 	// Dont handle other endpointDB operations during this time
-	self.lockDB()
-	defer self.unlockDB()
+	self.endpointDbMutex.RLock()
 
 	// Check if we have the endpoint already and which is more recent
 	oldEp := self.endpointDb[epreg.EndpointID]
+	self.endpointDbMutex.RUnlock()
 	if oldEp != nil {
 		// If old endpoint has more recent timestamp, nothing to do
 		if !epreg.Timestamp.After(oldEp.Timestamp) {
@@ -707,8 +759,9 @@ func (self *OfnetAgent) EndpointAdd(epreg *OfnetEndpoint, ret *bool) error {
 	}
 
 	// First, add the endpoint to local routing table
+	self.endpointDbMutex.Lock()
 	self.endpointDb[epreg.EndpointID] = epreg
-
+	self.endpointDbMutex.Unlock()
 	// Install the endpoint in datapath
 	err := self.datapath.AddEndpoint(epreg)
 	if err != nil {
@@ -728,13 +781,12 @@ func (self *OfnetAgent) EndpointDel(epreg *OfnetEndpoint, ret *bool) error {
 
 	// Ignore duplicate delete requests we might receive from multiple
 	// Ofnet masters
+	self.endpointDbMutex.RLock()
 	if self.endpointDb[epreg.EndpointID] == nil {
+		self.endpointDbMutex.RUnlock()
 		return nil
 	}
-
-	// Dont handle endpointDB operations during this time
-	self.lockDB()
-	defer self.unlockDB()
+	self.endpointDbMutex.RUnlock()
 
 	// Uninstall the endpoint from datapath
 	err := self.datapath.RemoveEndpoint(epreg)
@@ -743,7 +795,9 @@ func (self *OfnetAgent) EndpointDel(epreg *OfnetEndpoint, ret *bool) error {
 	}
 
 	// Remove it from endpoint table
+	self.endpointDbMutex.Lock()
 	delete(self.endpointDb, epreg.EndpointID)
+	self.endpointDbMutex.Unlock()
 
 	return nil
 }
@@ -788,8 +842,11 @@ func (self *OfnetAgent) DeleteBgp() error {
 		log.Errorf("Error deleting protocol neighbor")
 		return err
 	}
-	self.protopath.StopProtoServer()
-	return nil
+	err = self.protopath.StopProtoServer()
+	if err != nil {
+		log.Errorf("Error stopping bgp server,err:%v", err)
+	}
+	return err
 }
 
 func (self *OfnetAgent) GetRouterInfo() *OfnetProtoRouterInfo {
@@ -878,7 +935,8 @@ func (self *OfnetAgent) InspectState() (interface{}, error) {
 func (self *OfnetAgent) createVrf(Vrf string) (uint16, bool) {
 
 	log.Infof("Received create vrf for %v \n", Vrf)
-
+	self.vrfMutex.Lock()
+	defer self.vrfMutex.Unlock()
 	if vrfid, ok := self.vrfNameIdMap[Vrf]; ok {
 		log.Infof("Received create for existing vrf returnin %v", *vrfid)
 		self.vrfDb[Vrf].NumNetworks++
@@ -888,13 +946,11 @@ func (self *OfnetAgent) createVrf(Vrf string) (uint16, bool) {
 	vrfid, ok := self.vrfIdBmp.NextClear(1)
 
 	log.Infof("Allocating vrf id %v to Vrf \n", vrfid, Vrf)
-
 	if !ok {
 		log.Errorf("Error allocation vrfid")
 		return 0, ok
 	}
 	self.vrfIdBmp.Set(vrfid)
-
 	vrfInfo := &OfnetVrfInfo{
 		NumNetworks: 1,
 		VrfName:     Vrf,
@@ -908,14 +964,59 @@ func (self *OfnetAgent) createVrf(Vrf string) (uint16, bool) {
 
 func (self *OfnetAgent) deleteVrf(Vrf string) error {
 
+	self.vrfMutex.Lock()
+	defer self.vrfMutex.Unlock()
 	if vrfid, ok := self.vrfNameIdMap[Vrf]; ok {
 		self.vrfDb[Vrf].NumNetworks--
 		if self.vrfDb[Vrf].NumNetworks == 0 {
 			self.vrfIdBmp.Clear(uint(*vrfid))
 			delete(self.vrfNameIdMap, Vrf)
 			delete(self.vrfIdNameMap, *vrfid)
+			delete(self.vrfDb, Vrf)
 		}
 		return nil
 	}
 	return errors.New("Unknown Vrf")
+}
+
+func (self *OfnetAgent) getPortVlanMap(port uint32) *uint16 {
+	self.portVlanMapMutex.RLock()
+	defer self.portVlanMapMutex.RUnlock()
+	return self.portVlanMap[port]
+}
+
+func (self *OfnetAgent) getvniVlanMap(vni uint32) *uint16 {
+	self.vlanVnimutex.RLock()
+	defer self.vlanVnimutex.RUnlock()
+	return self.vniVlanMap[vni]
+}
+
+func (self *OfnetAgent) getvlanVniMap(vlan uint16) *uint32 {
+	self.vlanVnimutex.RLock()
+	defer self.vlanVnimutex.RUnlock()
+	return self.vlanVniMap[vlan]
+}
+
+func (self *OfnetAgent) getvtepTablePort(ip string) *uint32 {
+	self.vtepTablemutex.RLock()
+	defer self.vtepTablemutex.RUnlock()
+	return self.vtepTable[ip]
+}
+
+func (self *OfnetAgent) getvrfId(name string) *uint16 {
+	self.vrfMutex.RLock()
+	defer self.vrfMutex.RUnlock()
+	return self.vrfNameIdMap[name]
+}
+
+func (self *OfnetAgent) getvrfName(id uint16) *string {
+	self.vrfMutex.RLock()
+	defer self.vrfMutex.RUnlock()
+	return self.vrfIdNameMap[id]
+}
+
+func (self *OfnetAgent) getvlanVrf(vlan uint16) *string {
+	self.vlanVrfMutex.Lock()
+	defer self.vlanVrfMutex.Unlock()
+	return self.vlanVrf[vlan]
 }

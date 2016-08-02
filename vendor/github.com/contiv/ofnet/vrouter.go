@@ -151,7 +151,8 @@ func (self *Vrouter) InjectGARPs(epgID int) {
 // Add a local endpoint and install associated local route
 func (self *Vrouter) AddLocalEndpoint(endpoint OfnetEndpoint) error {
 
-	vni := self.agent.vlanVniMap[endpoint.Vlan]
+	vni := self.agent.getvlanVniMap(endpoint.Vlan)
+
 	if vni == nil {
 		log.Errorf("VNI for vlan %d is not known", endpoint.Vlan)
 		return errors.New("Unknown Vlan")
@@ -169,7 +170,8 @@ func (self *Vrouter) AddLocalEndpoint(endpoint OfnetEndpoint) error {
 		return err
 	}
 
-	vrfid := self.agent.vrfNameIdMap[endpoint.Vrf]
+	vrfid := self.agent.getvrfId(endpoint.Vrf)
+
 	if *vrfid == 0 {
 		log.Errorf("Invalid vrf name:%v", endpoint.Vrf)
 		return errors.New("Invalid vrf name")
@@ -302,8 +304,8 @@ func (self *Vrouter) RemoveLocalEndpoint(endpoint OfnetEndpoint) error {
 // Add a local IPv6 flow
 func (self *Vrouter) AddLocalIpv6Flow(endpoint OfnetEndpoint) error {
 
-	vrfid := self.agent.vrfNameIdMap[endpoint.Vrf]
-	if *vrfid == 0 {
+	vrfid := self.agent.getvrfId(endpoint.Vrf)
+	if vrfid != nil {
 		log.Errorf("Invalid vrf name:%v", endpoint.Vrf)
 		return errors.New("Invalid vrf name")
 	}
@@ -394,6 +396,8 @@ func (self *Vrouter) RemoveLocalIpv6Flow(endpoint OfnetEndpoint) error {
 func (self *Vrouter) AddVtepPort(portNo uint32, remoteIp net.IP) error {
 	// Install VNI to vlan mapping for each vni
 	log.Infof("Adding VTEP for portno %v , remote IP : %v", portNo, remoteIp)
+
+	self.agent.vlanVnimutex.RLock()
 	for vni, vlan := range self.agent.vniVlanMap {
 		// Install a flow entry for  VNI/vlan and point it to Ip table
 		portVlanFlow, err := self.vlanTable.NewFlow(ofctrl.FlowMatch{
@@ -415,12 +419,14 @@ func (self *Vrouter) AddVtepPort(portNo uint32, remoteIp net.IP) error {
 		portVlanFlow.Next(self.ipTable)
 		// Set the metadata to indicate packet came in from VTEP port
 
-		vrf := self.agent.vlanVrf[*vlan]
+		vrf := self.agent.getvlanVrf(*vlan)
+
 		if vrf == nil {
 			log.Errorf("Invalid vlan to Vrf mapping for %v", *vlan)
 			return errors.New("Invalid vlan to Vrf mapping")
 		}
-		vrfid := self.agent.vrfNameIdMap[*vrf]
+
+		vrfid := self.agent.getvrfId(*vrf)
 		if *vrfid == 0 {
 			log.Errorf("Invalid vrf name:%v", *vrf)
 			return errors.New("Invalid vrf name")
@@ -442,8 +448,10 @@ func (self *Vrouter) AddVtepPort(portNo uint32, remoteIp net.IP) error {
 		// save the port vlan flow for cleaning up later
 		self.vlanDb[*vlan].vtepVlanFlowDb[portNo] = portVlanFlow
 	}
+	self.agent.vlanVnimutex.RUnlock()
 
 	// walk all routes and see if we need to install it
+	self.agent.endpointDbMutex.RLock()
 	for _, endpoint := range self.agent.endpointDb {
 		if endpoint.OriginatorIp.String() == remoteIp.String() {
 			err := self.AddEndpoint(endpoint)
@@ -453,6 +461,7 @@ func (self *Vrouter) AddVtepPort(portNo uint32, remoteIp net.IP) error {
 			}
 		}
 	}
+	self.agent.endpointDbMutex.RUnlock()
 	return nil
 }
 
@@ -486,9 +495,13 @@ func (self *Vrouter) AddVlan(vlanId uint16, vni uint32, vrf string) error {
 	if !ok {
 		return errors.New("Error creating Vrf")
 	}
+
+	self.agent.vlanVrfMutex.Lock()
 	self.agent.vlanVrf[vlanId] = &vrf
+	self.agent.vlanVrfMutex.Unlock()
 
 	// Walk all VTEP ports and add vni-vlan mapping for new VNI
+	self.agent.vtepTablemutex.RLock()
 	for _, vtepPort := range self.agent.vtepTable {
 		// Install a flow entry for  VNI/vlan and point it to macDest table
 		portVlanFlow, err := self.vlanTable.NewFlow(ofctrl.FlowMatch{
@@ -500,18 +513,9 @@ func (self *Vrouter) AddVlan(vlanId uint16, vni uint32, vrf string) error {
 			log.Errorf("Error creating port vlan flow for vlan %d. Err: %v", vlanId, err)
 			return err
 		}
-
-		// Set the metadata to indicate packet came in from VTEP port
-		vrf := self.agent.vlanVrf[vlanId]
-		if vrf == nil {
-			log.Errorf("Invalid vlan to Vrf mapping for %v", *vlan)
-			return errors.New("Invalid vlan to Vrf mapping")
-		}
-
-		vrfid := self.agent.vrfNameIdMap[*vrf]
-
-		if *vrfid == 0 {
-			log.Errorf("Invalid vrf name:%v", *vrf)
+		var vrfid *uint16
+		if vrfid = self.agent.getvrfId(vrf); vrfid == nil {
+			log.Errorf("Invalid vrf name:%v", vrf)
 			return errors.New("Invalid vrf name")
 		}
 
@@ -528,6 +532,7 @@ func (self *Vrouter) AddVlan(vlanId uint16, vni uint32, vrf string) error {
 		portVlanFlow.Next(sNATTbl)
 		vlan.vtepVlanFlowDb[*vtepPort] = portVlanFlow
 	}
+	self.agent.vtepTablemutex.RUnlock()
 
 	// store it in DB
 	self.vlanDb[vlanId] = vlan
@@ -552,7 +557,9 @@ func (self *Vrouter) RemoveVlan(vlanId uint16, vni uint32, vrf string) error {
 	if err != nil {
 		return err
 	}
+	self.agent.vlanVrfMutex.Lock()
 	delete(self.agent.vlanVrf, vlanId)
+	self.agent.vlanVrfMutex.Unlock()
 	return nil
 }
 
@@ -564,7 +571,7 @@ func (self *Vrouter) AddEndpoint(endpoint *OfnetEndpoint) error {
 	}
 
 	// Lookup the VTEP for the endpoint
-	vtepPort := self.agent.vtepTable[endpoint.OriginatorIp.String()]
+	vtepPort := self.agent.getvtepTablePort(endpoint.OriginatorIp.String())
 	if vtepPort == nil {
 		log.Warnf("Could not find the VTEP for endpoint: %+v", endpoint)
 
@@ -580,7 +587,7 @@ func (self *Vrouter) AddEndpoint(endpoint *OfnetEndpoint) error {
 		return err
 	}
 
-	vrfid := self.agent.vrfNameIdMap[endpoint.Vrf]
+	vrfid := self.agent.getvrfId(endpoint.Vrf)
 	if *vrfid == 0 {
 		log.Errorf("Invalid vrf name:%v", endpoint.Vrf)
 		return errors.New("Invalid vrf name")
@@ -682,7 +689,7 @@ func (self *Vrouter) RemoveEndpoint(endpoint *OfnetEndpoint) error {
 func (self *Vrouter) AddRemoteIpv6Flow(endpoint *OfnetEndpoint) error {
 
 	// Lookup the VTEP for the endpoint
-	vtepPort := self.agent.vtepTable[endpoint.OriginatorIp.String()]
+	vtepPort := self.agent.getvtepTablePort(endpoint.OriginatorIp.String())
 	if vtepPort == nil {
 		log.Warnf("Could not find the VTEP for endpoint: %+v", endpoint)
 
@@ -698,8 +705,8 @@ func (self *Vrouter) AddRemoteIpv6Flow(endpoint *OfnetEndpoint) error {
 		return err
 	}
 
-	vrfid := self.agent.vrfNameIdMap[endpoint.Vrf]
-	if *vrfid == 0 {
+	var vrfid *uint16
+	if vrfid = self.agent.getvrfId(endpoint.Vrf); vrfid == nil {
 		log.Errorf("Invalid vrf name:%v", endpoint.Vrf)
 		return errors.New("Invalid vrf name")
 	}
@@ -715,6 +722,7 @@ func (self *Vrouter) AddRemoteIpv6Flow(endpoint *OfnetEndpoint) error {
 		Metadata:     &metadata,
 		MetadataMask: &metadataMask,
 	})
+
 	if err != nil {
 		log.Errorf("Error creating flow for endpoint: %+v. Err: %v", endpoint, err)
 		return err
@@ -902,12 +910,12 @@ func (self *Vrouter) processArp(pkt protocol.Ethernet, inPort uint32) {
 		switch arpHdr.Operation {
 		case protocol.Type_Request:
 			// Lookup the Dest IP in the endpoint table
-			vlan := self.agent.portVlanMap[inPort]
-			if vlan == nil {
+			var vlan *uint16
+			if vlan := self.agent.getPortVlanMap(inPort); vlan == nil {
 				return
 			}
 			endpointId := self.agent.getEndpointIdByIpVlan(arpHdr.IPDst, *vlan)
-			endpoint := self.agent.endpointDb[endpointId]
+			endpoint := self.agent.getEndpointByID(endpointId)
 			if endpoint == nil {
 				// If we dont know the IP address, dont send an ARP response
 				log.Infof("Received ARP request for unknown IP: %v", arpHdr.IPDst)

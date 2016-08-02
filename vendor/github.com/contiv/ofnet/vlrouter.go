@@ -141,6 +141,7 @@ func (self *Vlrouter) InjectGARPs(epgID int) {
 
 func (self *Vlrouter) AddLocalEndpoint(endpoint OfnetEndpoint) error {
 	// Install a flow entry for vlan mapping and point it to IP table
+	log.Infof("Received add localendpont for %v", endpoint)
 	if self.agent.ctrler == nil {
 		return nil
 	}
@@ -154,9 +155,10 @@ func (self *Vlrouter) AddLocalEndpoint(endpoint OfnetEndpoint) error {
 		return err
 	}
 
+	log.Infof("INSTALLLED VLAN TABLE")
 	//since only default vrf is supported in bgp.
 
-	vrfid := self.agent.vrfNameIdMap[endpoint.Vrf]
+	vrfid := self.agent.getvrfId(endpoint.Vrf)
 
 	if vrfid == nil || *vrfid == 0 {
 		log.Errorf("Invalid vrf name:%v", endpoint.Vrf)
@@ -189,7 +191,7 @@ func (self *Vlrouter) AddLocalEndpoint(endpoint OfnetEndpoint) error {
 		log.Errorf("Error creating output port %d. Err: %v", endpoint.PortNo, err)
 		return err
 	}
-
+	log.Infof("Before installing ip table")
 	// Install the IP address
 	ipFlow, err := self.ipTable.NewFlow(ofctrl.FlowMatch{
 		Priority:  FLOW_MATCH_PRIORITY,
@@ -395,7 +397,9 @@ func (self *Vlrouter) RemoveLocalIpv6Flow(endpoint OfnetEndpoint) error {
 func (self *Vlrouter) AddVlan(vlanId uint16, vni uint32, vrf string) error {
 
 	vrf = "default"
+	self.agent.vlanVrfMutex.Lock()
 	self.agent.vlanVrf[vlanId] = &vrf
+	self.agent.vlanVrfMutex.Unlock()
 	self.agent.createVrf(vrf)
 	return nil
 }
@@ -403,7 +407,9 @@ func (self *Vlrouter) AddVlan(vlanId uint16, vni uint32, vrf string) error {
 // Remove a vlan
 func (self *Vlrouter) RemoveVlan(vlanId uint16, vni uint32, vrf string) error {
 	// FIXME: Add this for multiple VRF support
+	self.agent.vlanVrfMutex.Lock()
 	delete(self.agent.vlanVrf, vlanId)
+	self.agent.vlanVrfMutex.Unlock()
 	self.agent.deleteVrf(vrf)
 	return nil
 }
@@ -442,7 +448,7 @@ func (self *Vlrouter) AddEndpoint(endpoint *OfnetEndpoint) error {
 	}
 	log.Infof("AddEndpoint call for endpoint: %+v", endpoint)
 
-	vrfid := self.agent.vrfNameIdMap[endpoint.Vrf]
+	vrfid := self.agent.getvrfId(endpoint.Vrf)
 	if *vrfid == 0 {
 		log.Errorf("Invalid vrf name:%v", endpoint.Vrf)
 		return errors.New("Invalid vrf name")
@@ -572,7 +578,7 @@ func (self *Vlrouter) AddRemoteIpv6Flow(endpoint *OfnetEndpoint) error {
 	}
 	log.Infof("AddRemoteIpv6Flow for endpoint: %+v", endpoint)
 
-	vrfid := self.agent.vrfNameIdMap[endpoint.Vrf]
+	vrfid := self.agent.getvrfId(endpoint.Vrf)
 	if *vrfid == 0 {
 		log.Errorf("Invalid vrf name:%v", endpoint.Vrf)
 		return errors.New("Invalid vrf name")
@@ -776,10 +782,11 @@ func (self *Vlrouter) processArp(pkt protocol.Ethernet, inPort uint32) {
 					self.RemoveEndpoint(endpoint)
 					endpoint.PortNo = inPort
 					endpoint.MacAddrStr = arpHdr.HWSrc.String()
+					self.agent.endpointDbMutex.Lock()
 					self.agent.endpointDb[endpoint.EndpointID] = endpoint
+					self.agent.endpointDbMutex.Unlock()
 					self.AddEndpoint(endpoint)
 					self.resolveUnresolvedEPs(endpoint.MacAddrStr, inPort)
-
 				}
 			}
 
@@ -820,7 +827,9 @@ func (self *Vlrouter) processArp(pkt protocol.Ethernet, inPort uint32) {
 					self.RemoveEndpoint(endpoint)
 					endpoint.PortNo = inPort
 					endpoint.MacAddrStr = arpHdr.HWSrc.String()
+					self.agent.endpointDbMutex.Lock()
 					self.agent.endpointDb[endpoint.EndpointID] = endpoint
+					self.agent.endpointDbMutex.Unlock()
 					self.AddEndpoint(endpoint)
 					self.resolveUnresolvedEPs(endpoint.MacAddrStr, inPort)
 
@@ -848,11 +857,13 @@ over given mac and port*/
 func (self *Vlrouter) resolveUnresolvedEPs(MacAddrStr string, portNo uint32) {
 
 	for endpointID, _ := range self.unresolvedEPs {
+		self.agent.endpointDbMutex.Lock()
 		endpoint := self.agent.endpointDb[endpointID]
 		self.RemoveEndpoint(endpoint)
 		endpoint.PortNo = portNo
 		endpoint.MacAddrStr = MacAddrStr
 		self.agent.endpointDb[endpoint.EndpointID] = endpoint
+		self.agent.endpointDbMutex.Unlock()
 		self.AddEndpoint(endpoint)
 		delete(self.unresolvedEPs, endpointID)
 	}

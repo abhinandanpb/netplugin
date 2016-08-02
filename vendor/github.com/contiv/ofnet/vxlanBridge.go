@@ -18,6 +18,7 @@ package ofnet
 
 import (
 	"errors"
+	"fmt"
 	"net"
 	"net/rpc"
 	"strings"
@@ -154,7 +155,7 @@ func (self *Vxlan) InjectGARPs(epgID int) {
 func (self *Vxlan) AddLocalEndpoint(endpoint OfnetEndpoint) error {
 	log.Infof("Adding localEndpoint: %+v", endpoint)
 
-	vni := self.agent.vlanVniMap[endpoint.Vlan]
+	vni := self.agent.getvlanVniMap(endpoint.Vlan)
 	if vni == nil {
 		log.Errorf("VNI for vlan %d is not known", endpoint.Vlan)
 		return errors.New("Unknown Vlan")
@@ -170,7 +171,7 @@ func (self *Vxlan) AddLocalEndpoint(endpoint OfnetEndpoint) error {
 		return err
 	}
 
-	vrfid := self.agent.vrfNameIdMap[endpoint.Vrf]
+	vrfid := self.agent.getvrfId(endpoint.Vrf)
 	//set vrf id as METADATA
 	metadata, metadataMask := Vrfmetadata(*vrfid)
 
@@ -258,7 +259,13 @@ func (self *Vxlan) AddLocalEndpoint(endpoint OfnetEndpoint) error {
 func (self *Vxlan) RemoveLocalEndpoint(endpoint OfnetEndpoint) error {
 	log.Infof("Received Remove local endpont {%v}", endpoint)
 	// Remove the port from flood lists
-	vlanId := self.agent.vniVlanMap[endpoint.Vni]
+	var vlanId *uint16
+
+	if vlanId := self.agent.getvniVlanMap(endpoint.Vni); vlanId != nil {
+		log.Errorf("Invalid vni to vlan mapping for vni:%v", endpoint.Vni)
+		return errors.New("Invalid vni to vlan mapping")
+	}
+
 	vlan := self.vlanDb[*vlanId]
 	output, err := self.ofSwitch.OutputPort(endpoint.PortNo)
 	if err == nil {
@@ -311,6 +318,8 @@ func (self *Vxlan) RemoveLocalEndpoint(endpoint OfnetEndpoint) error {
 // to ofp port number.
 func (self *Vxlan) AddVtepPort(portNo uint32, remoteIp net.IP) error {
 	// Install VNI to vlan mapping for each vni
+
+	self.agent.vlanVnimutex.RLock()
 	for vni, vlan := range self.agent.vniVlanMap {
 		// Install a flow entry for  VNI/vlan and point it to macDest table
 		portVlanFlow, err := self.vlanTable.NewFlow(ofctrl.FlowMatch{
@@ -328,8 +337,15 @@ func (self *Vxlan) AddVtepPort(portNo uint32, remoteIp net.IP) error {
 		portVlanFlow.SetVlan(*vlan)
 		// Set the metadata to indicate packet came in from VTEP port
 
-		vrf := self.agent.vlanVrf[*vlan]
-		vrfid := self.agent.vrfNameIdMap[*vrf]
+		var vrfid *uint16
+		if vrf := self.agent.getvlanVrf(*vlan); vrf != nil {
+			vrfid = self.agent.getvrfId(*vrf)
+			if vrfid != nil {
+				return fmt.Errorf("Invalid vrf id for vrf:%s", *vrf)
+			}
+		} else {
+			return fmt.Errorf("Unable to find vrf for vlan %v", *vlan)
+		}
 		//set vrf id as METADATA
 		vrfmetadata, vrfmetadataMask := Vrfmetadata(*vrfid)
 
@@ -345,10 +361,11 @@ func (self *Vxlan) AddVtepPort(portNo uint32, remoteIp net.IP) error {
 		// save the port vlan flow for cleaning up later
 		self.vlanDb[*vlan].vtepVlanFlowDb[portNo] = portVlanFlow
 	}
+	self.agent.vlanVnimutex.RUnlock()
 
 	// Walk all vlans and add vtep port to the vlan
 	for vlanId, vlan := range self.vlanDb {
-		vni := self.agent.vlanVniMap[vlanId]
+		vni := self.agent.getvlanVniMap(vlanId)
 		if vni == nil {
 			log.Errorf("Can not find vni for vlan: %d", vlanId)
 		}
@@ -360,6 +377,7 @@ func (self *Vxlan) AddVtepPort(portNo uint32, remoteIp net.IP) error {
 	}
 
 	// walk all routes and see if we need to install it
+	self.agent.endpointDbMutex.RLock()
 	for _, endpoint := range self.agent.endpointDb {
 		if endpoint.OriginatorIp.String() == remoteIp.String() {
 			err := self.AddEndpoint(endpoint)
@@ -369,6 +387,7 @@ func (self *Vxlan) AddVtepPort(portNo uint32, remoteIp net.IP) error {
 			}
 		}
 	}
+	self.agent.endpointDbMutex.RUnlock()
 
 	return nil
 }
@@ -391,7 +410,10 @@ func (self *Vxlan) RemoveVtepPort(portNo uint32, remoteIp net.IP) error {
 // Add a vlan.
 func (self *Vxlan) AddVlan(vlanId uint16, vni uint32, vrf string) error {
 	var err error
+	self.agent.vlanVrfMutex.Lock()
 	self.agent.vlanVrf[vlanId] = &vrf
+	self.agent.vlanVrfMutex.Unlock()
+
 	self.agent.createVrf(vrf)
 	// check if the vlan already exists. if it does, we are done
 	if self.vlanDb[vlanId] != nil {
@@ -416,6 +438,7 @@ func (self *Vxlan) AddVlan(vlanId uint16, vni uint32, vrf string) error {
 	}
 
 	// Walk all VTEP ports and add vni-vlan mapping for new VNI
+	self.agent.vtepTablemutex.RLock()
 	for _, vtepPort := range self.agent.vtepTable {
 		// Install a flow entry for  VNI/vlan and point it to macDest table
 		portVlanFlow, err := self.vlanTable.NewFlow(ofctrl.FlowMatch{
@@ -432,8 +455,15 @@ func (self *Vxlan) AddVlan(vlanId uint16, vni uint32, vrf string) error {
 		portVlanFlow.SetVlan(vlanId)
 
 		// Set the metadata to indicate packet came in from VTEP port
-		vrf := self.agent.vlanVrf[vlanId]
-		vrfid := self.agent.vrfNameIdMap[*vrf]
+		var vrfid *uint16
+		if vrf := self.agent.getvlanVrf(vlanId); vrf != nil {
+			vrfid = self.agent.getvrfId(*vrf)
+			if vrfid != nil {
+				return fmt.Errorf("Invalid vrf id for vrf:%s", *vrf)
+			}
+		} else {
+			return fmt.Errorf("Unable to find vrf for vlan %v", *vlan)
+		}
 		//set vrf id as METADATA
 		vrfmetadata, vrfmetadataMask := Vrfmetadata(*vrfid)
 
@@ -449,6 +479,7 @@ func (self *Vxlan) AddVlan(vlanId uint16, vni uint32, vrf string) error {
 		// save it in cache
 		vlan.vtepVlanFlowDb[*vtepPort] = portVlanFlow
 	}
+	self.agent.vtepTablemutex.RUnlock()
 
 	// Walk all VTEP ports and add it to the allFlood list
 	for _, vtepPort := range self.agent.vtepTable {
@@ -496,8 +527,10 @@ func (self *Vxlan) AddVlan(vlanId uint16, vni uint32, vrf string) error {
 
 	// store it in DB
 	self.vlanDb[vlanId] = vlan
-
+	self.agent.vrfMutex.Lock()
 	self.agent.vlanVrf[vlanId] = &vrf
+	self.agent.vrfMutex.Unlock()
+
 	self.agent.createVrf(vrf)
 	return nil
 }
@@ -532,7 +565,9 @@ func (self *Vxlan) RemoveVlan(vlanId uint16, vni uint32, vrf string) error {
 
 	// Remove it from DB
 	delete(self.vlanDb, vlanId)
+	self.agent.vlanVrfMutex.Lock()
 	delete(self.agent.vlanVrf, vlanId)
+	self.agent.vlanVrfMutex.Unlock()
 	self.agent.deleteVrf(vrf)
 	return nil
 }
@@ -547,7 +582,7 @@ func (self *Vxlan) AddEndpoint(endpoint *OfnetEndpoint) error {
 	log.Infof("Received endpoint: %+v", endpoint)
 
 	// Lookup the VTEP for the endpoint
-	vtepPort := self.agent.vtepTable[endpoint.OriginatorIp.String()]
+	vtepPort := self.agent.getvtepTablePort(endpoint.OriginatorIp.String())
 	if vtepPort == nil {
 		log.Warnf("Could not find the VTEP for endpoint: %+v", endpoint)
 
@@ -557,7 +592,7 @@ func (self *Vxlan) AddEndpoint(endpoint *OfnetEndpoint) error {
 	}
 
 	// map VNI to vlan Id
-	vlanId := self.agent.vniVlanMap[endpoint.Vni]
+	vlanId := self.agent.getvniVlanMap(endpoint.Vni)
 	if vlanId == nil {
 		log.Errorf("Endpoint %+v on unknown VNI: %d", endpoint, endpoint.Vni)
 		return errors.New("Unknown VNI")
@@ -783,11 +818,11 @@ func (self *Vxlan) processArp(pkt protocol.Ethernet, inPort uint32) {
 				return
 			}
 
-			if self.agent.portVlanMap[inPort] == nil {
+			vlan := self.agent.getPortVlanMap(inPort)
+			if vlan != nil {
 				log.Debugf("Invalid port vlan mapping. Ignoring arp packet")
 				return
 			}
-			vlan := self.agent.portVlanMap[inPort]
 
 			// Lookup the Source and Dest IP in the endpoint table
 			srcEp := self.agent.getEndpointByIpVlan(arpIn.IPSrc, *vlan)
@@ -837,12 +872,14 @@ func (self *Vxlan) processArp(pkt protocol.Ethernet, inPort uint32) {
 			if srcEp != nil && dstEp == nil {
 				// If the ARP request was received from VTEP port
 				// Ignore processing the packet
+				self.agent.vtepTablemutex.RLock()
 				for _, vtepPort := range self.agent.vtepTable {
 					if *vtepPort == inPort {
 						log.Debugf("Received packet from VTEP port. Ignore processing")
 						return
 					}
 				}
+				self.agent.vtepTablemutex.RUnlock()
 
 				// ARP request from local container to unknown IP
 				// Reinject ARP to VTEP ports
@@ -865,12 +902,12 @@ func (self *Vxlan) processArp(pkt protocol.Ethernet, inPort uint32) {
 
 				// Add set tunnel action to the instruction
 				pktOut.AddAction(setTunnelAction)
-
+				self.agent.vtepTablemutex.RLock()
 				for _, vtepPort := range self.agent.vtepTable {
 					log.Debugf("Sending to VTEP port: %+v", *vtepPort)
 					pktOut.AddAction(openflow13.NewActionOutput(*vtepPort))
 				}
-
+				self.agent.vtepTablemutex.Unlock()
 				// Send the packet out
 				self.ofSwitch.Send(pktOut)
 			}
@@ -914,12 +951,12 @@ func (self *Vxlan) sendGARP(ip net.IP, mac net.HardwareAddr, vni uint64) error {
 
 	// Add set tunnel action to the instruction
 	pktOut.AddAction(setTunnelAction)
-
+	self.agent.vtepTablemutex.RLock()
 	for _, vtepPort := range self.agent.vtepTable {
 		log.Debugf("Sending to Vtep port: %+v", *vtepPort)
 		pktOut.AddAction(openflow13.NewActionOutput(*vtepPort))
 	}
-
+	self.agent.vtepTablemutex.RUnlock()
 	// Send it out
 	self.ofSwitch.Send(pktOut)
 	return nil
