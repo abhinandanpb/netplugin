@@ -70,7 +70,7 @@ func (s *systemtestSuite) getNodeByName(name string) *node {
 
 func (n *node) startNetplugin(args string) error {
 	logrus.Infof("Starting netplugin on %s", n.Name())
-	return n.tbnode.RunCommandBackground("sudo " + n.suite.binpath + "/netplugin -plugin-mode docker -vlan-if " + n.suite.vlanIf + " --cluster-store " + n.suite.clusterStore + " " + args + "&> /tmp/netplugin.log")
+	return n.tbnode.RunCommandBackground("sudo " + n.suite.binpath + "/netplugin -plugin-mode docker -debug -vlan-if " + n.suite.vlanIf + " --cluster-store " + n.suite.clusterStore + " " + args + "&> /tmp/netplugin.log")
 }
 
 func (n *node) stopNetplugin() error {

@@ -246,7 +246,7 @@ func (s *systemtestSuite) SetUpTest(c *C) {
 				Vlans:            "1-4094",
 				Vxlans:           "1-10000",
 			}), IsNil)
-			time.Sleep(120 * time.Second)
+			time.Sleep(220 * time.Second)
 		}
 	}
 }
