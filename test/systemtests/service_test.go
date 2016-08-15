@@ -2,9 +2,7 @@ package systemtests
 
 import (
 	"fmt"
-	"strings"
 	"sync"
-	"time"
 
 	"github.com/Sirupsen/logrus"
 	"github.com/contiv/contivmodel/client"
@@ -27,6 +25,9 @@ func (s *systemtestSuite) TestServiceAddDeleteService(c *C) {
 		c.Skip("Skipping test")
 	}
 
+	s.SetupBgp(c, false)
+	s.CheckBgpConnection(c)
+
 	mutex := sync.Mutex{}
 
 	for i := 0; i < s.iterations; i++ {
@@ -39,6 +40,7 @@ func (s *systemtestSuite) TestServiceAddDeleteService(c *C) {
 			serviceNetworks   = map[string][]string{}
 			tenantNames       = map[string][]string{}
 			servicesPerTenant = map[string]map[string][]*container{}
+			allcontainers     = []*container{}
 		)
 
 		numContainer := s.containers
@@ -90,11 +92,14 @@ func (s *systemtestSuite) TestServiceAddDeleteService(c *C) {
 					var err error
 					mutex.Lock()
 					containers[network+tenant], err = s.runContainers(numContainer, false, net, "", nil, nil)
+					allcontainers = append(allcontainers, containers[network+tenant]...)
 					mutex.Unlock()
 					endChan <- err
 				}(network, tenant, containers)
 			}
 		}
+		_, err := s.CheckBgpRouteDistribution(c, allcontainers)
+		c.Assert(err, IsNil)
 
 		for tenant, networks := range serviceNetworks {
 			ips := []string{}
@@ -172,12 +177,14 @@ func (s *systemtestSuite) TestServiceAddDeleteService(c *C) {
 4) Creates Services
 5) Adds and delete service provider containers and checks service ip reachability
 */
-
+/*
 func (s *systemtestSuite) TestServiceAddDeleteProviders(c *C) {
 
 	if s.fwdMode != "routing" {
 		c.Skip("Skipping test")
 	}
+	s.SetupBgp(c, false)
+	s.CheckBgpConnection(c)
 
 	mutex := sync.Mutex{}
 
@@ -240,6 +247,7 @@ func (s *systemtestSuite) TestServiceAddDeleteProviders(c *C) {
 					var err error
 					mutex.Lock()
 					containers[network+":"+tenant], err = s.runContainers(numContainer, false, net, "", nil, nil)
+					allcontainers = append(allcontainers, containers[network+":"+tenant]...)
 					mutex.Unlock()
 					endChan <- err
 				}(network, tenant, containers)
@@ -345,7 +353,7 @@ func (s *systemtestSuite) TestServiceAddDeleteProviders(c *C) {
 		}
 	}
 }
-
+*/
 /*TestServiceAddDeleteProviders does the following:
 1) Creates networks in each tenant
 2) Creates Service Networks in each tenant
@@ -354,11 +362,15 @@ func (s *systemtestSuite) TestServiceAddDeleteProviders(c *C) {
 5) Creates Services and verifies the sequesnce of providerupdate and
 service creation will appropriately update service providers
 */
+/*
 func (s *systemtestSuite) TestServiceSequenceProviderAddServiceAdd(c *C) {
 
 	if s.fwdMode != "routing" {
 		c.Skip("Skipping test")
 	}
+
+	s.SetupBgp(c, false)
+	s.CheckBgpConnection(c)
 
 	mutex := sync.Mutex{}
 
@@ -419,6 +431,7 @@ func (s *systemtestSuite) TestServiceSequenceProviderAddServiceAdd(c *C) {
 				var err error
 				mutex.Lock()
 				containers[network+":"+tenant], err = s.runContainers(numContainer, false, net, "", nil, nil)
+				allcontainers = append(allcontainers, containers[network+tenant]...)
 				mutex.Unlock()
 				endChan <- err
 			}(network, tenant, containers)
@@ -493,7 +506,7 @@ func (s *systemtestSuite) TestServiceSequenceProviderAddServiceAdd(c *C) {
 	}
 
 }
-
+*/
 /*TestServiceAddDeleteProviders does the following:
 1) Creates networks in each tenant
 2) Creates Service Networks in each tenant
@@ -503,11 +516,14 @@ func (s *systemtestSuite) TestServiceSequenceProviderAddServiceAdd(c *C) {
 6) Restarts netmaster one by one on every node and creates/deletes service,providers
 and verfies the reachability.
 */
+/*
 func (s systemtestSuite) TestServiceTriggerNetmasterSwitchover(c *C) {
 
 	if s.fwdMode != "routing" {
 		c.Skip("Skipping test")
 	}
+	s.SetupBgp(c, false)
+	s.CheckBgpConnection(c)
 
 	mutex := sync.Mutex{}
 
@@ -574,6 +590,7 @@ func (s systemtestSuite) TestServiceTriggerNetmasterSwitchover(c *C) {
 					mutex.Lock()
 					c, err := s.runContainers(numContainer, false, net, "", nil, nil)
 					containers[network+tenant] = append(containers[network+tenant], c...)
+					allcontainers = append(allcontainers, containers[network+tenant]...)
 					mutex.Unlock()
 					endChan <- err
 				}(network, tenant, containers)
@@ -690,7 +707,7 @@ func (s systemtestSuite) TestServiceTriggerNetmasterSwitchover(c *C) {
 		}
 	}
 }
-
+*/
 /*TestServiceAddDeleteProviders does the following:
 1) Creates networks in each tenant
 2) Creates Service Networks in each tenant
@@ -700,11 +717,15 @@ func (s systemtestSuite) TestServiceTriggerNetmasterSwitchover(c *C) {
 6) Restarts netplugin one by one on every node and creates/deletes service,providers
 and verfies the reachability.
 */
+/*
 func (s systemtestSuite) TestServiceTriggerNetpluginRestart(c *C) {
 
 	if s.fwdMode != "routing" {
 		c.Skip("Skipping test")
 	}
+
+	s.SetupBgp(c, false)
+	s.CheckBgpConnection(c)
 
 	mutex := sync.Mutex{}
 
@@ -772,6 +793,7 @@ func (s systemtestSuite) TestServiceTriggerNetpluginRestart(c *C) {
 					mutex.Lock()
 					c, err := s.runContainers(numContainer, false, net, "", nil, nil)
 					containers[network+tenant] = append(containers[network+tenant], c...)
+					allcontainers = append(allcontainers, containers[network+tenant]...)
 					mutex.Unlock()
 					endChan <- err
 				}(network, tenant, containers)
@@ -857,7 +879,7 @@ func (s systemtestSuite) TestServiceTriggerNetpluginRestart(c *C) {
 		}
 	}
 }
-
+*/
 func (s *systemtestSuite) createServiceNetworks(c *C, i int, numNets int, tenant string) []string {
 
 	networks := []string{}
@@ -920,6 +942,9 @@ func (s *systemtestSuite) addProviders(c *C, labels []string, numProviders int, 
 	}
 
 	containers, err = s.runContainers(numProviders, false, netName, "", names, labels)
+	c.Assert(err, IsNil)
+
+	_, err := s.CheckBgpRouteDistribution(c, containers)
 	c.Assert(err, IsNil)
 
 	return containers
