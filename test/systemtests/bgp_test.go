@@ -970,6 +970,7 @@ func (s *systemtestSuite) CheckBgpRouteDistribution(c *C, containers []*containe
 				if contCount == remoteRoutes {
 					endChan <- nil
 					logrus.Infof("Done checking container route distribution on node %s", n.Name())
+					time.Sleep(5* time.Second)
 					return
 				}
 				time.Sleep(1 * time.Second)
