@@ -204,7 +204,7 @@ Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
               # create an interface for bridged network
               node.vm.network :private_network, ip: "0.0.0.0", virtualbox__intnet: network_name, auto_config: false
             else
-              node.vm.network :private_network, ip: "0.0.0.0", virtualbox__intnet: "true", auto_config: false
+              node.vm.network :private_network, ip: "0.0.0.0", virtualbox__intnet: "hello", auto_config: false
             end
             node.vm.provider "virtualbox" do |v|
                 # make all nics 'virtio' to take benefit of builtin vlan tag

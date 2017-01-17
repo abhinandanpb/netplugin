@@ -498,7 +498,7 @@ func (vl *VlanBridge) AddUplink(portNo uint32, ifname string) error {
 }
 
 // RemoveUplink remove an uplink to the switch
-func (vl *VlanBridge) RemoveUplink(portNo uint32) error {
+func (vl *VlanBridge) RemoveUplink(portNo uint32, ifname string) error {
 	delete(vl.uplinkDb, portNo)
 	close(vl.nlCloser)
 	return nil
@@ -797,4 +797,8 @@ func (vl *VlanBridge) sendGARP(ip net.IP, mac net.HardwareAddr, vlanID uint16) e
 	}
 
 	return nil
+}
+
+//FlushEndpoints flushes endpoints from ovs
+func (vl *VlanBridge) FlushEndpoints(endpointType int) {
 }

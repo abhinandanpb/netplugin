@@ -757,7 +757,7 @@ func (vx *Vxlan) AddUplink(portNo uint32, ifname string) error {
 }
 
 // RemoveUplink remove an uplink to the switch
-func (vx *Vxlan) RemoveUplink(portNo uint32) error {
+func (vx *Vxlan) RemoveUplink(portNo uint32, ifname string) error {
 	return nil
 }
 
@@ -1102,3 +1102,8 @@ func (self *Vxlan) sendGARP(ip net.IP, mac net.HardwareAddr, vni uint64) error {
 
 	return nil
 }
+
+//FlushEndpoints flushes endpoints from ovs
+func (self *Vxlan) FlushEndpoints(endpointType int) {
+}
+

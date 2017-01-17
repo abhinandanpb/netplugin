@@ -162,19 +162,24 @@ func (d *OvsDriver) Init(info *core.InstanceInfo) error {
 	}
 
 	log.Infof("Initializing ovsdriver")
+	var routerInfo ofnet.OfnetProtoRouterInfo
+
+	//if info.Protocol == "iprouting" || info.Protocol == "bgp" {
+	routerInfo.ProtocolType = "iprouting" //info.Protocol
+	routerInfo.VlanIntf = info.VlanIntf
+	//}
 
 	// Init switch DB
 	d.switchDb = make(map[string]*OvsSwitch)
-
 	// Create Vxlan switch
 	d.switchDb["vxlan"], err = NewOvsSwitch(vxlanBridgeName, "vxlan", info.VtepIP,
-		info.FwdMode)
+		info.FwdMode, routerInfo)
 	if err != nil {
 		log.Fatalf("Error creating vlan switch. Err: %v", err)
 	}
 	// Create Vlan switch
 	d.switchDb["vlan"], err = NewOvsSwitch(vlanBridgeName, "vlan", info.VtepIP,
-		info.FwdMode, info.VlanIntf)
+		info.FwdMode, routerInfo)
 	if err != nil {
 		log.Fatalf("Error creating vlan switch. Err: %v", err)
 	}
@@ -189,7 +194,7 @@ func (d *OvsDriver) Init(info *core.InstanceInfo) error {
 
 	// Create Host Access switch
 	d.switchDb["host"], err = NewOvsSwitch(hostBridgeName, "host", info.VtepIP,
-		info.FwdMode)
+		info.FwdMode, routerInfo)
 	if err != nil {
 		log.Fatalf("Error creating host switch. Err: %v", err)
 	}

@@ -54,11 +54,11 @@ func (s *systemtestSuite) testInfraNetworkAddDelete(c *C, encap string) {
 			// TBD: Need to fix timing issue
 			// where endpoint create is received on non-master node
 			// before network create is received
-			time.Sleep(5 * time.Second)
+			time.Sleep(35 * time.Second)
 
 			netNames = append(netNames, network.NetworkName)
 		}
-
+		
 		for _, node := range s.nodes {
 			for networkNum := 0; networkNum < numInfraNw; networkNum++ {
 				// From first node, ping every node on this network
@@ -66,9 +66,10 @@ func (s *systemtestSuite) testInfraNetworkAddDelete(c *C, encap string) {
 					logrus.Infof("Running ping test for network %q node %d", netNames[networkNum], nodeNum)
 					ipaddr := fmt.Sprintf("10.1.%d.%d", networkNum, nodeNum)
 					if s.fwdMode == "routing" && encap == "vlan" {
-						err := s.verifyIPs([]string{ipaddr})
+					        err := s.verifyIPs([]string{ipaddr}) 	
 						c.Assert(err, IsNil)
 					}
+					//time.Sleep(10*time.Second)
 					c.Assert(node.checkPing(ipaddr), IsNil)
 				}
 			}

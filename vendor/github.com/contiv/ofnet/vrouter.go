@@ -827,7 +827,7 @@ func (vr *Vrouter) AddUplink(portNo uint32, ifname string) error {
 }
 
 // RemoveUplink remove an uplink to the switch
-func (vr *Vrouter) RemoveUplink(portNo uint32) error {
+func (vr *Vrouter) RemoveUplink(portNo uint32, ifname string) error {
 	// Nothing to do
 	return nil
 }
@@ -1015,3 +1015,8 @@ func Vrfmetadata(vrfid uint16) (uint64, uint64) {
 
 	return metadata, metadataMask
 }
+
+//FlushEndpoints flushes endpoints from ovs
+func (self *Vrouter) FlushEndpoints(endpointType int) {
+}
+

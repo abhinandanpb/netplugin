@@ -1015,3 +1015,28 @@ func (s *systemtestSuite) CheckBgpRouteDistributionIPList(c *C, ips []string) er
 	}
 	return errors.New("Bgp Route distribution not complete")
 }
+
+
+func (s *systemtestSuite) CheckBgpRouteDistributionIPListNode(c *C,node remotessh.TestbedNode, ips []string) error {
+        for i := 0; i < 120; i++ {
+                logrus.Infof("Checking Bgp container route distribution")
+                time.Sleep(1 * time.Second)
+		bgp, err := s.cli.BgpInspect(node.GetName())
+                if err == nil {
+		   routes := strings.Join(bgp.Oper.Routes, ",")
+		   ipCount:=0
+               	   for _, ip := range ips {
+                     if !strings.Contains(routes, ip) {
+                        ipCount++
+                     } else {
+                        break
+                     }
+                   }
+                   if ipCount == len(ips) {
+                      return nil
+                   }
+                }
+                time.Sleep(1 * time.Second)
+        }
+        return errors.New("Bgp Route distribution not complete")
+}

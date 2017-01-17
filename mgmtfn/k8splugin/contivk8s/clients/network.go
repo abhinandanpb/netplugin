@@ -71,10 +71,10 @@ func (c *NWClient) AddPod(podInfo interface{}) (*cniapi.RspAddPod, error) {
 
 	switch {
 	case r.StatusCode == int(404):
-		return nil, fmt.Errorf("Page not found!")
+		return nil, fmt.Errorf("page not found")
 
 	case r.StatusCode == int(403):
-		return nil, fmt.Errorf("Access denied!")
+		return nil, fmt.Errorf("access denied")
 
 	case r.StatusCode == int(500):
 		info, err := ioutil.ReadAll(r.Body)
@@ -123,9 +123,9 @@ func (c *NWClient) DelPod(podInfo interface{}) error {
 
 	switch {
 	case r.StatusCode == int(404):
-		return fmt.Errorf("Page not found!")
+		return fmt.Errorf("page not found")
 	case r.StatusCode == int(403):
-		return fmt.Errorf("Access denied!")
+		return fmt.Errorf("access denied")
 	case r.StatusCode != int(200):
 		log.Errorf("GET Status '%s' status code %d \n", r.Status, r.StatusCode)
 		return fmt.Errorf("%s", r.Status)

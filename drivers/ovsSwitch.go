@@ -57,7 +57,7 @@ type OvsSwitch struct {
 
 // NewOvsSwitch Creates a new OVS switch instance
 func NewOvsSwitch(bridgeName, netType, localIP string, fwdMode string,
-	routerInfo ...string) (*OvsSwitch, error) {
+	routerInfo ofnet.OfnetProtoRouterInfo) (*OvsSwitch, error) {
 	var err error
 	var datapath string
 	var ofnetPort, ctrlrPort uint16
@@ -87,7 +87,7 @@ func NewOvsSwitch(bridgeName, netType, localIP string, fwdMode string,
 		}
 		// Create an ofnet agent
 		sw.ofnetAgent, err = ofnet.NewOfnetAgent(bridgeName, datapath, net.ParseIP(localIP),
-			ofnetPort, ctrlrPort, routerInfo...)
+			ofnetPort, ctrlrPort, routerInfo)
 
 		if err != nil {
 			log.Fatalf("Error initializing ofnet")
@@ -108,7 +108,7 @@ func NewOvsSwitch(bridgeName, netType, localIP string, fwdMode string,
 		}
 		// Create an ofnet agent
 		sw.ofnetAgent, err = ofnet.NewOfnetAgent(bridgeName, datapath, net.ParseIP(localIP),
-			ofnetPort, ctrlrPort, routerInfo...)
+			ofnetPort, ctrlrPort, routerInfo)
 
 		if err != nil {
 			log.Fatalf("Error initializing ofnet")
@@ -646,7 +646,7 @@ func (sw *OvsSwitch) RemoveUplinkPort() error {
 		time.Sleep(time.Second)
 
 		// Remove uplink from agent
-		err = sw.ofnetAgent.RemoveUplink(ofpPort)
+		err = sw.ofnetAgent.RemoveUplink(ofpPort, intfName)
 		if err != nil {
 			log.Errorf("Error removing uplink %s. Err: %v", intfName, err)
 			return err
