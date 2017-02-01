@@ -190,7 +190,8 @@ func (d *OvsDriver) Init(info *core.InstanceInfo) error {
 
 	// Add uplink to VLAN switch
 	if len(info.UplinkIntf) != 0 {
-		err = d.switchDb["vlan"].AddUplink("uplinkPort", info.UplinkIntf)
+		numUplinks := getNumOfUplinks(info.UplinkIntf, info.FwdMode)
+		err = d.switchDb["vlan"].AddUplink("uplinkBond", info.UplinkIntf[:numUplinks])
 		if err != nil {
 			log.Errorf("Could not add uplink %v to vlan OVS. Err: %v", info.UplinkIntf, err)
 		}
@@ -849,4 +850,11 @@ func (d *OvsDriver) InspectNameserver() ([]byte, error) {
 	}
 
 	return jsonState, nil
+}
+
+func getNumOfUplinks(vlanIntf []string, fwdmode string) int {
+	if fwdmode == "routing" {
+		return 1
+	}
+	return len(vlanIntf)
 }

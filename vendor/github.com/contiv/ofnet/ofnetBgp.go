@@ -31,6 +31,7 @@ import (
 	gobgp "github.com/osrg/gobgp/server"
 	"github.com/shaleman/libOpenflow/openflow13"
 	"github.com/shaleman/libOpenflow/protocol"
+	cmap "github.com/streamrail/concurrent-map"
 	"github.com/vishvananda/netlink"
 	"google.golang.org/grpc"
 )
@@ -55,6 +56,7 @@ type OfnetBgp struct {
 	intfName      string //loopback intf to run bgp
 	oldState      string
 	oldAdminState string
+	bgpDb         cmap.ConcurrentMap // database for all bgp learnt routes
 }
 
 type OfnetBgpInspect struct {
@@ -63,15 +65,10 @@ type OfnetBgpInspect struct {
 }
 
 // Create a new vlrouter instance
-func NewOfnetBgp(agent *OfnetAgent, uplinkPort []string) *OfnetBgp {
-	//Sanity checks
-	if agent == nil || agent.datapath == nil {
-		log.Errorf("Invilid OfnetAgent")
-		return nil
-	}
+func NewOfnetBgp(agent *OfnetAgent) *OfnetBgp {
 
-	if len(uplinkPort) != 1 {
-		log.Errorf("OfnetBgp currently supports only one uplink interface. Num uplinks configured: %d", len(uplinkPort))
+	if agent == nil || agent.datapath == nil {
+		log.Errorf("Invalid OfnetAgent")
 		return nil
 	}
 
@@ -79,49 +76,35 @@ func NewOfnetBgp(agent *OfnetAgent, uplinkPort []string) *OfnetBgp {
 	// Keep a reference to the agent
 	ofnetBgp.agent = agent
 
-	uplink := &PortInfo{
-		Name:       uplinkPort[0],
-		Type:       PortType,
-		LinkStatus: linkDown,
-	}
-
-	for _, linkName := range uplinkPort {
-		link := LinkInfo{
-			Name:       linkName,
-			Port:       uplink,
-			LinkStatus: linkDown,
-		}
-		link.OfPort, _ = ofnetBgp.agent.ovsDriver.GetOfpPortNo(linkName)
-		uplink.MbrLinks = append(uplink.MbrLinks, &link)
-		uplink.ActiveLinks = append(uplink.ActiveLinks, &link)
-	}
-
-	uplink.checkLinkStatus()
-
-	ofnetBgp.uplinkPort = uplink
 	ofnetBgp.bgpServer, ofnetBgp.grpcServer = createBgpServer()
 
 	if ofnetBgp.bgpServer == nil || ofnetBgp.grpcServer == nil {
 		log.Errorf("Error instantiating Bgp server")
 		return nil
 	}
+
 	ofnetBgp.stopWatch = make(chan bool, 1)
 	ofnetBgp.intfName = "inb01"
 	ofnetBgp.start = make(chan bool, 1)
 	ofnetBgp.stopArp = make(chan bool, 1)
+	ofnetBgp.bgpDb = cmap.New()
 	return ofnetBgp
+
 }
 
 /*
 Bgp serve routine does the following:
 1) Creates inb01 router port
-2) Add MyBgp endpoint
+2) Add local Bgp endpoint
 3) Kicks off routines to monitor route updates and peer state
 */
 func (self *OfnetBgp) StartProtoServer(routerInfo *OfnetProtoRouterInfo) error {
 
-	log.Infof("Starting the Bgp Server with %v", routerInfo)
-	//go routine to start gobgp server
+	log.Infof("Starting the Bgp Server with %#v", routerInfo)
+
+	//Flush previous external endpoints if any
+	self.agent.FlushEndpoints(OFNET_EXTERNAL)
+
 	var len uint
 	var err error
 	self.routerIP, len, err = ParseCIDR(routerInfo.RouterIP)
@@ -133,6 +116,7 @@ func (self *OfnetBgp) StartProtoServer(routerInfo *OfnetProtoRouterInfo) error {
 	if err != nil {
 		log.Fatal(err)
 	}
+
 	self.cc = conn
 	log.Debugf("Creating the loopback port ")
 	err = self.agent.ovsDriver.CreatePort(self.intfName, "internal", 1)
@@ -173,16 +157,16 @@ func (self *OfnetBgp) StartProtoServer(routerInfo *OfnetProtoRouterInfo) error {
 	self.agent.vlanVrf[default_vlan] = &vrf
 
 	ep := &OfnetEndpoint{
-		EndpointID:   epid,
-		EndpointType: "internal-bgp",
-		IpAddr:       net.ParseIP(self.routerIP),
-		IpMask:       net.ParseIP("255.255.255.255"),
-		Vrf:          "default",                  // FIXME set VRF correctly
-		MacAddrStr:   intf.HardwareAddr.String(), //link.Attrs().HardwareAddr.String(),
-		Vlan:         default_vlan,
-		PortNo:       ofPortno,
-		Timestamp:    time.Now(),
+		EndpointID: epid,
+		IpAddr:     net.ParseIP(self.routerIP),
+		IpMask:     net.ParseIP("255.255.255.255"),
+		Vrf:        "default",                  // FIXME set VRF correctly
+		MacAddrStr: intf.HardwareAddr.String(), //link.Attrs().HardwareAddr.String(),
+		Vlan:       default_vlan,
+		PortNo:     ofPortno,
+		Timestamp:  time.Now(),
 	}
+	self.agent.setInternalBgp(ep)
 
 	// Add the endpoint to local routing table
 
@@ -221,6 +205,7 @@ func (self *OfnetBgp) StopProtoServer() error {
 	if err != nil {
 		return err
 	}
+
 	if self.myBgpPeer != "" {
 		self.DeleteProtoNeighbor()
 	}
@@ -235,6 +220,7 @@ func (self *OfnetBgp) StopProtoServer() error {
 			return err
 		}
 	}
+
 	self.routerIP = ""
 	self.myBgpAs = 0
 	self.cc.Close()
@@ -254,6 +240,7 @@ func (self *OfnetBgp) DeleteProtoNeighbor() error {
 	3) Finally delete all routes learnt on the nexthop bgp port.
 	4) Mark the routes learn via json rpc as unresolved
 	*/
+
 	log.Infof("Received DeleteProtoNeighbor to delete bgp neighbor %v", self.myBgpPeer)
 	n := &bgpconf.Neighbor{
 		Config: bgpconf.NeighborConfig{
@@ -267,22 +254,14 @@ func (self *OfnetBgp) DeleteProtoNeighbor() error {
 	self.agent.datapath.RemoveEndpoint(bgpEndpoint)
 	self.agent.endpointDb.Remove(bgpEndpoint.EndpointID)
 	self.myBgpPeer = ""
-
+	self.oldState = ""
+	self.oldAdminState = ""
+	//uplink, _ := self.agent.ovsDriver.GetOfpPortNo(self.vlanIntf)
 	var ep *OfnetEndpoint
-	for endpoint := range self.agent.endpointDb.IterBuffered() {
+	for endpoint := range self.bgpDb.IterBuffered() {
 		ep = endpoint.Val.(*OfnetEndpoint)
-		if self.isUplinkPort(ep.PortNo) {
-			self.agent.datapath.RemoveEndpoint(ep)
-			if ep.EndpointType == "internal" {
-				ep.PortNo = 0
-				self.agent.endpointDb.Set(ep.EndpointID, ep)
-				//We readd unresolved endpoints that were learnt via
-				//etcd
-				self.agent.datapath.AddEndpoint(ep)
-			} else if ep.EndpointType == "external" {
-				self.agent.endpointDb.Remove(ep.EndpointID)
-			}
-		}
+		self.agent.datapath.RemoveEndpoint(ep)
+		self.bgpDb.Remove(ep.EndpointID)
 	}
 	return nil
 }
@@ -300,7 +279,7 @@ func (self *OfnetBgp) isUplinkPort(portNo uint32) bool {
 func (self *OfnetBgp) AddProtoNeighbor(neighborInfo *OfnetProtoNeighborInfo) error {
 
 	<-self.start
-	log.Infof("Received AddProtoNeighbor to add bgp neighbor %v", neighborInfo.NeighborIP)
+	log.Infof("Received AddProtoNeighbor to add bgp neighbor for %v", neighborInfo.NeighborIP)
 
 	peerAs, _ := strconv.Atoi(neighborInfo.As)
 
@@ -323,23 +302,15 @@ func (self *OfnetBgp) AddProtoNeighbor(neighborInfo *OfnetProtoNeighborInfo) err
 
 	epid := self.agent.getEndpointIdByIpVrf(net.ParseIP(neighborInfo.NeighborIP), "default")
 	epreg := &OfnetEndpoint{
-		EndpointID:   epid,
-		EndpointType: "external-bgp",
-		IpAddr:       net.ParseIP(neighborInfo.NeighborIP),
-		IpMask:       net.ParseIP("255.255.255.255"),
-		Vrf:          "default", // FIXME set VRF correctly
-		Vlan:         1,
-		Timestamp:    time.Now(),
+		EndpointID: epid,
+		IpAddr:     net.ParseIP(neighborInfo.NeighborIP),
+		IpMask:     net.ParseIP("255.255.255.255"),
+		Vrf:        "default", // FIXME set VRF correctly
+		Vlan:       1,
+		Timestamp:  time.Now(),
 	}
+	self.agent.setExternalBgp(epreg)
 
-	// Install the endpoint in datapath
-	// First, add the endpoint to local routing table
-
-	err = self.agent.datapath.AddEndpoint(epreg)
-	if err != nil {
-		log.Errorf("Error adding endpoint: {%+v}. Err: %v", epreg, err)
-		return err
-	}
 	self.agent.endpointDb.Set(epreg.EndpointID, epreg)
 
 	self.myBgpPeer = neighborInfo.NeighborIP
@@ -362,13 +333,14 @@ func (self *OfnetBgp) AddProtoNeighbor(neighborInfo *OfnetProtoNeighborInfo) err
 
 //GetRouterInfo returns the configured RouterInfo
 func (self *OfnetBgp) GetRouterInfo() *OfnetProtoRouterInfo {
+
 	if self.routerIP == "" {
 		return nil
 	}
 	routerInfo := &OfnetProtoRouterInfo{
 		ProtocolType: "bgp",
 		RouterIP:     self.routerIP,
-		UplinkPort:   *(self.uplinkPort),
+		UplinkPort:   self.uplinkPort,
 	}
 	return routerInfo
 }
@@ -381,6 +353,7 @@ func (self *OfnetBgp) AddLocalProtoRoute(pathInfo []*OfnetProtoRouteInfo) error 
 		//Bgp is not configured.
 		return nil
 	}
+
 	log.Infof("Received AddLocalProtoRoute to add local endpoint to protocol RIB: %+v", pathInfo)
 
 	// add routes
@@ -389,6 +362,7 @@ func (self *OfnetBgp) AddLocalProtoRoute(pathInfo []*OfnetProtoRouteInfo) error 
 		bgp.NewPathAttributeNextHop(pathInfo[0].nextHopIP),
 		bgp.NewPathAttributeAsPath([]bgp.AsPathParamInterface{bgp.NewAs4PathParam(bgp.BGP_ASPATH_ATTR_TYPE_SEQ, []uint32{self.myBgpAs})}),
 	}
+
 	paths := []*table.Path{}
 	for _, path := range pathInfo {
 		paths = append(paths, table.NewPath(nil, bgp.NewIPAddrPrefix(32, path.localEpIP), false, attrs, time.Now(), false))
@@ -458,28 +432,14 @@ func (self *OfnetBgp) peerUpdate(s *gobgp.WatchEventPeerState) {
 		endpoint := self.agent.getEndpointByIpVrf(net.ParseIP(self.myBgpPeer), "default")
 		self.agent.datapath.RemoveEndpoint(endpoint)
 		endpoint.PortNo = 0
-
-		err := self.agent.datapath.AddEndpoint(endpoint)
-		if err != nil {
-			log.Errorf("Error unresolving bgp peer %s ", self.myBgpPeer)
-		}
+		//self.agent.datapath.AddEndpoint(endpoint)
 		self.agent.endpointDb.Set(endpoint.EndpointID, endpoint)
 
 		var ep *OfnetEndpoint
-		for endpoint := range self.agent.endpointDb.IterBuffered() {
+		for endpoint := range self.bgpDb.IterBuffered() {
 			ep = endpoint.Val.(*OfnetEndpoint)
-			if self.isUplinkPort(ep.PortNo) {
-				self.agent.datapath.RemoveEndpoint(ep)
-				if ep.EndpointType == "internal" {
-					ep.PortNo = 0
-					self.agent.endpointDb.Set(ep.EndpointID, ep)
-					//We readd unresolved endpoints that were learnt via
-					//json rpc
-					self.agent.datapath.AddEndpoint(ep)
-				} else if ep.EndpointType == "external" {
-					self.agent.endpointDb.Remove(ep.EndpointID)
-				}
-			}
+			self.agent.datapath.RemoveEndpoint(ep)
+			self.bgpDb.Remove(ep.EndpointID)
 		}
 	}
 	self.oldState = s.State.String()
@@ -509,51 +469,48 @@ func (self *OfnetBgp) modRib(path *table.Path) error {
 	endpointIPNet, _ := netlink.ParseIPNet(nlri.String())
 	log.Infof("Bgp Rib Received endpoint update for path %s", path.String())
 
-	//check if bgp published a route local to the host
-	epid := self.agent.getEndpointIdByIpVrf(endpointIPNet.IP.Mask(endpointIPNet.Mask), "default")
-
-	//Check if the route is local
-	if nextHop == self.routerIP {
-		log.Debugf("This is a local route skipping endpoint create! ")
-		return nil
-	} else if ep := self.agent.getEndpointByID(epid); ep != nil {
-		if ep.EndpointType != "external" {
-			log.Debugf("Endpoint was learnt via internal protocol. skipping update! ")
-			return nil
-		}
-	}
-
 	nhEpid := self.agent.getEndpointIdByIpVrf(net.ParseIP(nextHop), "default")
 
+	log.Infof("The nexthop received is %s \n", nextHop)
 	if ep := self.agent.getEndpointByID(nhEpid); ep == nil {
 		//the nexthop is not the directly connected eBgp peer
 		macAddrStr = ""
 		portNo = 0
 	} else {
+		log.Infof("Next hop ep is %+v \n", ep)
 		macAddrStr = ep.MacAddrStr
 		portNo = ep.PortNo
 	}
 
-	ipmask := net.ParseIP("255.255.255.255").Mask(endpointIPNet.Mask)
+	//check if bgp published a route local to the host
+	epid := self.agent.getEndpointIdByIpVrf(endpointIPNet.IP.Mask(endpointIPNet.Mask), "default")
+	var epreg *OfnetEndpoint
+	//Check if the route is local
 
-	if path.IsWithdraw != true {
-		epreg := &OfnetEndpoint{
+	if nextHop == self.routerIP {
+		log.Debugf("This is a local route skipping endpoint create! ")
+		return nil
+	} else {
+		ipmask := net.ParseIP("255.255.255.255").Mask(endpointIPNet.Mask)
+		epreg = &OfnetEndpoint{
 			EndpointID:   epid,
-			EndpointType: "external",
 			IpAddr:       endpointIPNet.IP,
 			IpMask:       ipmask,
 			Vrf:          "default", // FIXME set VRF correctly
 			MacAddrStr:   macAddrStr,
-			Vlan:         1,
+			Vlan:         0,
 			OriginatorIp: self.agent.localIp,
 			PortNo:       portNo,
 			Timestamp:    time.Now(),
 		}
+	}
 
+	if path.IsWithdraw != true {
+		self.agent.setExternal(epreg)
 		// Install the endpoint in datapath
 		// First, add the endpoint to local routing table
-
-		self.agent.endpointDb.Set(epreg.EndpointID, epreg)
+		self.bgpDb.Set(epreg.EndpointID, epreg)
+		log.Infof("the endpoint bgp is adding : {%+v} \n", epreg)
 		err := self.agent.datapath.AddEndpoint(epreg)
 		if err != nil {
 			log.Errorf("Error adding endpoint: {%+v}. Err: %v", epreg, err)
@@ -561,12 +518,14 @@ func (self *OfnetBgp) modRib(path *table.Path) error {
 		}
 	} else {
 		log.Info("Received route withdraw from BGP for ", endpointIPNet)
-		endpoint := self.agent.getEndpointByIpVrf(endpointIPNet.IP, "default")
-		if endpoint != nil {
-			self.agent.datapath.RemoveEndpoint(endpoint)
-			self.agent.endpointDb.Remove(endpoint.EndpointID)
+		//If we receive bgp route for a contiv remote endpoint , unset the external route type
+		if e, ok := self.bgpDb.Get(epreg.EndpointID); ok {
+			ep := e.(*OfnetEndpoint)
+			self.agent.datapath.RemoveEndpoint(ep)
+			self.bgpDb.Remove(ep.EndpointID)
 		}
 	}
+
 	return nil
 }
 
@@ -613,7 +572,7 @@ func (self *OfnetBgp) ModifyProtoRib(path interface{}) {
 }
 
 func (self *OfnetBgp) sendArpPacketOut() {
-	if self.myBgpPeer == "" {
+	if self.myBgpPeer == "" || self.uplinkPort == nil {
 		return
 	}
 
@@ -684,4 +643,14 @@ func (self *OfnetBgp) InspectProto() (interface{}, error) {
 	}
 
 	return OfnetBgpInspect, nil
+}
+
+func (self *OfnetBgp) SetRouterInfo(uplink *PortInfo) {
+	log.Infof("Received Set Router info for %v \n", uplink)
+	if uplink != nil && len(uplink.MbrLinks) != 1 {
+		log.Errorf("OfnetBgp currently supports only one uplink interface. Num uplinks active: %d", len(uplink.ActiveLinks))
+		return
+	}
+	uplink.checkLinkStatus()
+	self.uplinkPort = uplink
 }
