@@ -3,7 +3,7 @@
 
 DEFAULT_DOCKER_VERSION := 1.12.6
 SHELL := /bin/bash
-EXCLUDE_DIRS := bin docs Godeps scripts test vagrant vendor install
+EXCLUDE_DIRS := bin docs Godeps scripts test vagrant vendor install ovs
 PKG_DIRS := $(filter-out $(EXCLUDE_DIRS),$(subst /,,$(sort $(dir $(wildcard */)))))
 TO_BUILD := ./netplugin/ ./netmaster/ ./netctl/netctl/ ./mgmtfn/k8splugin/contivk8s/ ./mgmtfn/mesosplugin/netcontiv/
 HOST_GOBIN := `if [ -n "$$(go env GOBIN)" ]; then go env GOBIN; else dirname $$(which go); fi`
@@ -268,10 +268,13 @@ host-plugin-restart:
 
 # complete workflow to create rootfs, create/enable plugin and start swarm-mode
 demo-v2plugin:
-	CONTIV_V2PLUGIN_NAME="$${CONTIV_V2PLUGIN_NAME:-contiv/v2plugin:0.1}" CONTIV_DOCKER_VERSION="$${CONTIV_DOCKER_VERSION:-1.13.1}" CONTIV_DOCKER_SWARM="$${CONTIV_DOCKER_SWARM:-swarm_mode}" make ssh-build
+	CONTIV_V2PLUGIN_NAME="$${CONTIV_V2PLUGIN_NAME:-contiv/v2plugin:0.1}" CONTIV_DOCKER_VERSION="$${CONTIV_DOCKER_VERSION:-1.13.1}" CONTIV_DOCKER_SWARM="$${CONTIV_DOCKER_SWARM:-classic_mode}" make ssh-build
 	vagrant ssh netplugin-node1 -c 'bash -lc "source /etc/profile.d/envvar.sh && cd /opt/gopath/src/github.com/contiv/netplugin && make host-pluginfs-create && make host-plugin-restart && make host-swarm-restart"'
 
 only-tar:
+
+v2plugin-test: demo-v2plugin
+	go test -v -timeout 480m ./test/systemtests -check.v -check.f "Basic"
 
 tar: clean-tar 
 	CONTIV_NODES=1 ${MAKE} build

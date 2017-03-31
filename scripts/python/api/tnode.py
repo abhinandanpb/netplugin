@@ -84,8 +84,8 @@ class Node:
     # Enable v2plugin on vagrant node
     def enableV2Plugin(self, args=""):
         ssh_object = self.sshConnect(self.username, self.password)
-        command = "docker plugin set " + os.environ.get("CONTIV_V2PLUGIN_NAME", "") + " iflist=eth2,eth3 plugin_name=" + os.environ["CONTIV_V2PLUGIN_NAME"] + args + " >> /tmp/netplugin.log 2>&1"
-        self.runCmd(command)
+        command = "docker plugin set " + os.environ.get("CONTIV_V2PLUGIN_NAME", "") + " iflist=eth2,eth3 plugin_name=" + os.environ["CONTIV_V2PLUGIN_NAME"] + " ctrl_ip=" + self.addr + " " + args + " >> /tmp/netplugin.log 2>&1"
+	self.runCmd(command)
         command = "docker plugin enable " + os.environ.get("CONTIV_V2PLUGIN_NAME", "") +  args + " >> /tmp/netplugin.log 2>&1"
         self.npThread = threading.Thread(target=ssh_exec_thread, args=(ssh_object, command))
         # npThread.setDaemon(True)

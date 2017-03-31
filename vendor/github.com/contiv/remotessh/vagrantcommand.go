@@ -18,6 +18,7 @@ package remotessh
 import (
 	"os"
 	"os/exec"
+	"github.com/Sirupsen/logrus"
 )
 
 // VagrantCommand is a command that is run on a vagrant node
@@ -31,6 +32,7 @@ func (c *VagrantCommand) getCmd(cmd string, args ...string) *exec.Cmd {
 	osCmd := exec.Command("vagrant", newArgs...)
 	osCmd.Env = os.Environ()
 	osCmd.Env = append(osCmd.Env, c.Env...)
+	logrus.Infof("COMMAND IS @@@@@@ %#v",osCmd)
 	return osCmd
 }
 
@@ -41,5 +43,6 @@ func (c *VagrantCommand) Run(cmd string, args ...string) error {
 
 // RunWithOutput runs a command and return its exit status and output
 func (c *VagrantCommand) RunWithOutput(cmd string, args ...string) ([]byte, error) {
+        logrus.Infof("COMMAND IS %s",cmd)	
 	return c.getCmd(cmd, args...).CombinedOutput()
 }
