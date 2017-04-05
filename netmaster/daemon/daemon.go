@@ -261,7 +261,7 @@ func (d *MasterDaemon) runLeader() {
 	// Create HTTP server and listener
 	server := &http.Server{Handler: router}
 	server.SetKeepAlivesEnabled(false)
-	listener, err := net.Listen("tcp", d.ListenURL)
+	listener, err := net.Listen("tcp", ":9999")
 	if nil != err {
 		log.Fatalln(err)
 	}
@@ -293,7 +293,7 @@ func (d *MasterDaemon) runFollower() {
 	// start server
 	server := &http.Server{Handler: router}
 	server.SetKeepAlivesEnabled(false)
-	listener, err := net.Listen("tcp", d.ListenURL)
+	listener, err := net.Listen("tcp", ":9999")
 	if nil != err {
 		log.Fatalln(err)
 	}

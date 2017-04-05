@@ -6,7 +6,6 @@ import (
 	"os"
 	"strings"
 	. "testing"
-	"time"
 	"github.com/Sirupsen/logrus"
 	"github.com/contiv/contivmodel/client"
 	"github.com/contiv/remotessh"
@@ -121,7 +120,6 @@ func (s *systemtestSuite) SetUpTest(c *C) {
 }
 
 func (s *systemtestSuite) TearDownTest(c *C) {
-	time.Sleep(5000 * time.Second)
 	for _, node := range s.nodes {
 		c.Check(node.checkForNetpluginErrors(), IsNil)
 		c.Assert(node.exec.rotateNetpluginLog(), IsNil)

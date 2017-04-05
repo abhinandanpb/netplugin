@@ -274,7 +274,7 @@ demo-v2plugin:
 only-tar:
 
 v2plugin-test: demo-v2plugin
-	go test -v -timeout 480m ./test/systemtests -check.v -check.f "Basic"
+	go test -v -timeout 480m ./test/systemtests -check.v 
 
 tar: clean-tar 
 	CONTIV_NODES=1 ${MAKE} build

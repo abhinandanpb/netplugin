@@ -521,7 +521,7 @@ func (w *swarmV2) checkForNetpluginErrors() error {
 func (w *swarmV2) rotateLog(prefix string) error {
 	oldPrefix := fmt.Sprintf("/var/run/contiv/log/%s", prefix)
 	newPrefix := fmt.Sprintf("/tmp/_%s", prefix)
-	_, err := w.node.runCommand(fmt.Sprintf("mv %s.log %s-`date +%%s`.log", oldPrefix, newPrefix))
+	_, err := w.node.runCommand(fmt.Sprintf("sudo mv %s.log %s-`date +%%s`.log", oldPrefix, newPrefix))
 	return err
 }
 
