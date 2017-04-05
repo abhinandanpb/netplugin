@@ -18,13 +18,14 @@ package main
 import (
 	"flag"
 	"fmt"
-	"os"
-	"time"
-
 	log "github.com/Sirupsen/logrus"
 	"github.com/contiv/netplugin/netmaster/daemon"
 	"github.com/contiv/netplugin/netmaster/docknet"
+	"github.com/contiv/netplugin/utils/netutils"
 	"github.com/contiv/netplugin/version"
+	"os"
+	"strings"
+	"time"
 )
 
 type cliOpts struct {
@@ -75,7 +76,23 @@ func parseOpts(opts *cliOpts) error {
 		false,
 		"prints current version")
 
-	return flagSet.Parse(os.Args[1:])
+	err := flagSet.Parse(os.Args[1:])
+	if err != nil {
+		return err
+	}
+
+	if !strings.Contains(opts.listenURL, ":") {
+		fmt.Fprintf(os.Stderr, "Invalid listenURL <ipaddr>:<port#>, %s", opts.listenURL)
+		flagSet.PrintDefaults()
+		os.Exit(0)
+	}
+	listenIP := strings.Split(opts.listenURL, ":")[0]
+	if !netutils.IsAddrLocal(listenIP) {
+		fmt.Fprintf(os.Stderr, "listenURL IP is not local %s", opts.listenURL)
+		flagSet.PrintDefaults()
+		os.Exit(0)
+	}
+	return nil
 }
 
 func execOpts(opts *cliOpts) {

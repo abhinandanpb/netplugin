@@ -1366,14 +1366,15 @@ func (s *systemtestSuite) SetUpTestVagrant(c *C) {
 
 	time.Sleep(5 * time.Second)
 	if s.basicInfo.Scheduler != "k8" {
-		for i := 0; i < 21; i++ {
+		for i := 0; i < 50; i++ {
 
 			_, err := s.cli.TenantGet("default")
 			if err == nil {
 				break
 			}
+			logrus.Errorf("The error is %s",err)
 			// Fail if we reached last iteration
-			c.Assert((i < 20), Equals, true)
+			c.Assert((i < 50), Equals, true)
 			time.Sleep(1 * time.Second)
 		}
 	}

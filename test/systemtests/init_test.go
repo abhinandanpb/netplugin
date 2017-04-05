@@ -105,7 +105,7 @@ func (s *systemtestSuite) SetUpSuite(c *C) {
 		os.Exit(1)
 	}
 
-	s.cli, _ = client.NewContivClient("http://localhost:9999")
+	s.cli, _ = client.NewContivClient("http://127.0.0.1:9999")
 }
 
 func (s *systemtestSuite) SetUpTest(c *C) {

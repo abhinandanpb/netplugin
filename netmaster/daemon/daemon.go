@@ -19,11 +19,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net"
-	"net/http"
-	"sync"
-	"time"
-
 	"github.com/contiv/netplugin/core"
 	"github.com/contiv/netplugin/netmaster/master"
 	"github.com/contiv/netplugin/netmaster/mastercfg"
@@ -33,6 +28,11 @@ import (
 	"github.com/contiv/objdb"
 	"github.com/contiv/ofnet"
 	"github.com/gorilla/mux"
+	"net"
+	"net/http"
+	"strings"
+	"sync"
+	"time"
 
 	log "github.com/Sirupsen/logrus"
 )
@@ -87,9 +87,24 @@ func (d *MasterDaemon) Init() {
 	}
 }
 
+func (d *MasterDaemon) getLocalAddr() (string, error) {
+	var err error
+	localIP := strings.Split(d.ListenURL, ":")[0]
+	if len(localIP) == 0 {
+		// If listenURL is not configured get it from local interface
+		localIP, err = getLocalAddr()
+		if err != nil {
+			log.Infof("Error getting local IP address. Err: %v", err)
+			return "", errors.New("Error getting local IP address")
+		}
+	}
+	log.Infof("VK: Using localIP %s", localIP)
+	return localIP, nil
+}
+
 func (d *MasterDaemon) registerService() {
 	// Get the address to be used for local communication
-	localIP, err := getLocalAddr()
+	localIP, err := d.getLocalAddr()
 	if err != nil {
 		log.Fatalf("Error getting local IP address. Err: %v", err)
 	}
@@ -330,7 +345,7 @@ func (d *MasterDaemon) RunMasterFsm() {
 	var err error
 
 	// Get the address to be used for local communication
-	localIP, err := getLocalAddr()
+	localIP, err := d.getLocalAddr()
 	if err != nil {
 		log.Fatalf("Error getting local IP address. Err: %v", err)
 	}
@@ -397,7 +412,7 @@ func (d *MasterDaemon) getMasterInfo() (map[string]interface{}, error) {
 	info := make(map[string]interface{})
 
 	// get local ip
-	localIP, err := getLocalAddr()
+	localIP, err := d.getLocalAddr()
 	if err != nil {
 		return nil, errors.New("Error getting local IP address")
 	}
